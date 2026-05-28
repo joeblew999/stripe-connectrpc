@@ -59,21 +59,27 @@ def seed_products [] {
     let rows = (open --raw data/products.jsonl | lines | each {|l| $l | from json})
     print $"seeding (($rows | length)) products from data/products.jsonl"
     for p in $rows {
+        # stripe-cli returns exit 0 even on API 404, with the error in the
+        # body — so we can't trust exit_code. Parse JSON and check whether
+        # the returned object's id matches what we asked for.
         let exists = (^stripe products retrieve $p.id | complete)
-        if $exists.exit_code == 0 {
+        let exists_body = (try { $exists.stdout | from json } catch { {} })
+        if (($exists_body | get --optional id) == $p.id) {
             print $"  ✓ ($p.id) already exists"
             continue
         }
-        let r = (^stripe products create
-            --id $p.id
-            --name $p.name
-            --description $p.description
+        let r = (^stripe post /v1/products
+            -d $"id=($p.id)"
+            -d $"name=($p.name)"
+            -d $"description=($p.description)"
             -d $"tax_code=($p.tax_code)"
             | complete)
-        if $r.exit_code == 0 {
+        let resp = (try { $r.stdout | from json } catch { {} })
+        if (($resp | get --optional id) == $p.id) {
             print $"  ✓ created ($p.id)"
         } else {
-            print $"  ✗ failed ($p.id): ($r.stdout)"
+            let msg = ($resp | get --optional error.message | default $r.stdout)
+            print $"  ✗ ($p.id) failed: ($msg)"
         }
     }
 }
@@ -90,17 +96,20 @@ def seed_prices [] {
             print $"  ✓ ($p.lookup_key) already exists"
             continue
         }
-        let r = (^stripe prices create
-            --lookup-key $p.lookup_key
-            --product $p.product
-            --unit-amount $p.unit_amount
-            --currency $p.currency
+        let r = (^stripe post /v1/prices
+            -d $"product=($p.product)"
+            -d $"unit_amount=($p.unit_amount)"
+            -d $"currency=($p.currency)"
             -d $"recurring[interval]=($p.interval)"
+            -d $"lookup_key=($p.lookup_key)"
             | complete)
-        if $r.exit_code == 0 {
-            print $"  ✓ created ($p.lookup_key)"
+        # Same exit-code trap as seed_products — verify by parsing body.
+        let resp = (try { $r.stdout | from json } catch { {} })
+        if ((($resp | get --optional id) | default "") | str starts-with "price_") {
+            print $"  ✓ created ($p.lookup_key) → (($resp.id))"
         } else {
-            print $"  ✗ failed ($p.lookup_key): ($r.stdout)"
+            let msg = ($resp | get --optional error.message | default $r.stdout)
+            print $"  ✗ ($p.lookup_key) failed: ($msg)"
         }
     }
 }
@@ -463,8 +472,11 @@ def test_checkout [lookup_key: string, mode: string] {
     let price_id = ($prices | first | get id)
     print $"using price ($price_id) for lookup_key ($lookup_key) — mode=($mode)"
 
+    # SMP requires Stripe API version 2025-03-31.basil or later. The account
+    # default is currently 2024-10-28.acacia, so we pin per-request via header.
     mut args = [
         "post" "/v1/checkout/sessions"
+        "--stripe-version" "2025-03-31.basil"
         "-d" "mode=subscription"
         "-d" $"line_items[0][price]=($price_id)"
         "-d" "line_items[0][quantity]=1"
@@ -482,26 +494,34 @@ def test_checkout [lookup_key: string, mode: string] {
     }
 
     let r = (^stripe ...$args | complete)
-    if $r.exit_code != 0 {
-        print $"✗ failed: ($r.stdout)"
+    let body = (try { $r.stdout | from json } catch { {} })
+    let api_err = ($body | get --optional error)
+    if $api_err != null {
+        print $"✗ Stripe API error: (($api_err.message))"
+        let code = ($api_err | get --optional code | default "")
+        if ($code | str length) > 0 {
+            print $"  code: ($code)"
+        }
         print ""
         if $mode == "smp" {
-            print "  If you see 'managed_payments is not enabled for this account':"
-            print "  - Confirm the Stripe account is in a SMP seller country (`mise run bootstrap:account`)"
-            print "  - Enable SMP in Dashboard → Settings → Payments → Managed Payments"
-            print "  - Or use Stripe Payments mode: `mise run test:checkout-payments`"
-        } else {
-            print "  If you see 'automatic_tax: tax registrations required':"
-            print "  - Register at least one tax jurisdiction in Dashboard → Tax → Registrations"
-            print "  - Or drop `automatic_tax` for unbilled testing (edit scripts/bootstrap.nu)"
+            print "  If 'managed_payments not enabled' — Stripe Managed Payments isn't"
+            print "  activated on the account yet. Either enable it in the dashboard"
+            print "  (mise run open:stripe-smp) or use the Payments-mode fallback:"
+            print "    mise run test:checkout-payments"
         }
         exit 1
     }
-    let session = ($r.stdout | from json)
-    print $"  ✓ session ($session.id)"
+    let session_id = ($body | get --optional id | default "")
+    let session_url = ($body | get --optional url | default "")
+    if ($session_url | str length) == 0 {
+        print $"✗ unexpected response — no `url` field:"
+        print $r.stdout
+        exit 1
+    }
+    print $"  ✓ session ($session_id)"
     print ""
     print "Open this URL in your browser:"
-    print $"  ($session.url)"
+    print $"  ($session_url)"
     print ""
     print "Test card: 4242 4242 4242 4242 — any future expiry, any CVC, any zip."
     print "Make sure `mise run worker:dev` AND `mise run stripe:listen` are running"

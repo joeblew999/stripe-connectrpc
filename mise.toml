@@ -1,7 +1,7 @@
 [tools]
 rust = "1.88"
-"aqua:nushell/nushell" = "latest"
-"aqua:stripe/stripe-cli" = "latest"
+"aqua:nushell/nushell" = "0.112.2"
+"aqua:stripe/stripe-cli" = "1.42.0"
 "npm:wrangler" = "latest"
 "cargo:worker-build" = "latest"
 
