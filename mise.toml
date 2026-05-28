@@ -194,9 +194,19 @@ shell = "nu -c"
 run = "nu scripts/bootstrap.nu countries"
 
 [tasks."bootstrap:tax-codes"]
-description = "Show SMP-eligible tax codes grouped by category (73 codes)"
+description = "Show SMP-eligible product tax codes grouped by category (72 codes)"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu tax-codes"
+
+[tasks."bootstrap:tax-coverage"]
+description = "Show buyer countries where Stripe handles indirect tax under SMP (82 countries)"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu tax-coverage"
+
+[tasks."check-tax"]
+description = "Check if a buyer country is tax-covered by SMP — usage: mise run check-tax -- TH"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu check-tax"
 
 [tasks."bootstrap:launches"]
 description = "Show tracked project × jurisdiction launches with stage"

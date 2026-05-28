@@ -24,6 +24,7 @@ def main [
         "account"       => { show_account }
         "countries"     => { print_countries }
         "tax-codes"     => { print_tax_codes }
+        "tax-coverage"  => { print_tax_coverage }
         "launches"      => { print_launches }
         "scan"          => { print_scan }
         "flow"          => { print_flow }
@@ -33,13 +34,15 @@ def main [
         "test-checkout"          => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
         "test-checkout-payments" => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
         "check-country"          => { check_country ($arg | default "TH") }
+        "check-tax"              => { check_tax_coverage ($arg | default "TH") }
 
         _ => {
             print $"unknown subcommand: ($cmd)"
             print ""
             print "setup:  products | prices | webhook | portal | all"
-            print "info:   status | account | countries | tax-codes | launches | scan | flow"
+            print "info:   status | account | countries | tax-codes | tax-coverage | launches | scan | flow"
             print "        check-country <ISO>"
+            print "        check-tax <ISO>           (is buyer country covered by SMP tax?)"
             print "test:   test-customer"
             print "        test-checkout          [lookup_key]   (SMP mode)"
             print "        test-checkout-payments [lookup_key]   (Stripe Payments — we are MoR)"
@@ -309,11 +312,13 @@ def print_scan [] {
     let products = (open --raw data/products.jsonl | lines | length)
     let prices = (open --raw data/prices.jsonl | lines | length)
     let launches = (open --raw data/launches.jsonl | lines | length)
+    let tax_cov = (open --raw data/tax-coverage.jsonl | lines | length)
 
     print "data/ summary"
     print "============="
     print $"countries.jsonl    (($countries | length)) rows  — sellers: smp=($smp) payments=($payments) paystack=($paystack)  blocked-buyers=($blocked)"
-    print $"tax-codes.jsonl    ($tax) rows  — SMP-eligible Stripe tax codes"
+    print $"tax-codes.jsonl    ($tax) rows  — SMP-eligible Stripe product tax codes"
+    print $"tax-coverage.jsonl ($tax_cov) rows  — buyer countries where Stripe handles indirect tax under SMP"
     print $"products.jsonl     ($products) rows  — sports SaaS tiers"
     print $"prices.jsonl       ($prices) rows  — per product/interval/currency"
     print $"launches.jsonl     ($launches) rows  — project × jurisdiction tracker"
@@ -359,6 +364,45 @@ def print_flow [] {
     print "   - mise run worker:deploy  → capture URL → fnox set SMP_WORKER_URL '…'"
     print "   - mise run bootstrap:webhook  → capture whsec_ → mise run worker:secret-put"
     print "   - mise run test:checkout against the deployed worker; real card"
+}
+
+def print_tax_coverage [] {
+    let rows = (open --raw data/tax-coverage.jsonl | lines | each {|l| $l | from json})
+    let excl = ($rows | where domestic_excluded != null | length)
+    print $"SMP tax coverage — total (($rows | length)) countries"
+    print $"  ($excl) have domestic-sale exclusions — Stripe does not cover intra-country tax there"
+    print ""
+    $rows
+    | group-by region
+    | items {|region, list|
+        print $"\n($region) — (($list | length))"
+        $list | each {|c|
+            let suffix = if $c.domestic_excluded != null {
+                $"  ⚠ domestic excluded: ($c.domestic_excluded)"
+            } else { "" }
+            print $"  ($c.code)($suffix)"
+        } | ignore
+    }
+    | ignore
+}
+
+# Check whether a given buyer-country is covered by SMP tax (Stripe handles it).
+def check_tax_coverage [code: string] {
+    let code_upper = ($code | str upcase)
+    let rows = (open --raw data/tax-coverage.jsonl | lines | each {|l| $l | from json})
+    let match = ($rows | where code == $code_upper)
+    if ($match | length) == 0 {
+        print $"  ($code_upper) — NOT in SMP tax-coverage list"
+        print "  You can still sell to buyers there if not buyer-blocked, but YOU remain responsible for indirect tax."
+        return
+    }
+    let m = ($match | first)
+    print $"  ($code_upper) — Stripe handles tax under SMP [region: ($m.region)]"
+    if $m.domestic_excluded != null {
+        print $"  ⚠ domestic exception: ($m.domestic_excluded)"
+        print "  Stripe DOES handle cross-border sales TO this country."
+        print "  Stripe does NOT handle domestic sales FROM a seller in this country (you'd remit yourself)."
+    }
 }
 
 def print_launches [] {

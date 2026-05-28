@@ -33,11 +33,33 @@ Run `mise run bootstrap:countries` to see the breakdown grouped by region with m
 - `·` — Stripe Payments only (we'd be MoR, not Stripe)
 - `✗ blk` — blocked buyer country (no checkout to here under SMP)
 
-## tax-codes.jsonl
+## tax-codes.jsonl — **product** tax codes
 
-73 Stripe tax codes (`txcd_…`) eligible under SMP, grouped by category (`saas`, `software`, `games`, `books`, `audio`, `video`, `training`, etc.). Products in `products.jsonl` MUST reference a code from here or `managed_payments[enabled]=true` will reject at checkout.
+72 Stripe tax codes (`txcd_…`) eligible under SMP, grouped by category (`saas`, `software`, `games`, `books`, `audio`, `video`, `training`, etc.). Products in `products.jsonl` MUST reference a code from here or `managed_payments[enabled]=true` will reject at checkout.
 
 `mise run bootstrap:tax-codes` prints them grouped.
+
+## tax-coverage.jsonl — **buyer-country** tax coverage
+
+82 countries where Stripe handles indirect tax (VAT/GST/sales tax) under SMP — meaning when you sell to a buyer in one of these, Stripe calculates, collects, files, and remits the tax for you.
+
+```jsonl
+{"code":"TH","region":"asia-pacific","domestic_excluded":null}
+{"code":"JP","region":"asia-pacific","domestic_excluded":"all-domestic"}
+{"code":"SG","region":"asia-pacific","domestic_excluded":"b2b-domestic"}
+```
+
+`domestic_excluded` flags edge cases where Stripe handles **cross-border into** the country but NOT **domestic-from** it. JP (all domestic sales) and SG (B2B domestic) are the two such exceptions.
+
+Look-up:
+```sh
+mise run check-tax -- TH        # Stripe handles tax there?
+mise run bootstrap:tax-coverage  # full table grouped by region
+```
+
+Countries **absent** from this list: SMP can still take payment from buyers there (unless they're on the `buyer_blocked_modes` list in `countries.jsonl`), but YOU remain responsible for any indirect tax on those sales.
+
+Source: <https://docs.stripe.com/payments/managed-payments/tax-compliance> (fetched 2026-05-28).
 
 ## products.jsonl
 
