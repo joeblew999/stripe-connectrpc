@@ -1,0 +1,36 @@
+# Per-repo fnox config for smp — Stripe Managed Payments shared service.
+#
+# Naming follows the joeblew999 convention:
+#   - Cloud-provider creds (CLOUDFLARE_*) use bare keychain names —
+#     shared with other CF-using repos via one keychain item each.
+#   - Per-repo secrets are prefixed SMP_* in the keychain to avoid
+#     collisions, but exported under their canonical names so
+#     wrangler / Stripe SDK conventions stay untouched.
+#
+# `mise run onboard` walks a fresh clone through populating these.
+# `mise run worker:secret-put` pushes the Stripe ones to wrangler.
+
+[providers.keychain]
+type = "keychain"
+service = "fnox"
+
+[secrets]
+# Cloudflare deploy creds. Shared across joeblew999 CF repos.
+CLOUDFLARE_API_TOKEN  = { provider = "keychain", value = "CLOUDFLARE_API_TOKEN" }
+CLOUDFLARE_ACCOUNT_ID = { provider = "keychain", value = "CLOUDFLARE_ACCOUNT_ID" }
+
+# Stripe API secret key (sk_test_... in dev, sk_live_... in prod).
+# Exported under TWO names — same keychain item, two consumers:
+#   STRIPE_SECRET_KEY → consumed by the Rust Worker via `env.secret(...)`.
+#   STRIPE_API_KEY    → consumed by `stripe-cli` (the env var name it expects).
+STRIPE_SECRET_KEY = { provider = "keychain", value = "SMP_STRIPE_SECRET_KEY" }
+STRIPE_API_KEY    = { provider = "keychain", value = "SMP_STRIPE_SECRET_KEY" }
+
+# Stripe webhook signing secret (whsec_...).
+# Local dev: `mise run stripe:listen` prints one to copy into the keychain.
+# Prod: Stripe Dashboard → Developers → Webhooks → endpoint → Signing secret.
+STRIPE_WEBHOOK_SECRET = { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SECRET" }
+
+# Deployed Worker URL — captured by `mise run worker:deploy` for the
+# Stripe Dashboard webhook endpoint configuration.
+SMP_WORKER_URL = { provider = "keychain", value = "SMP_WORKER_URL" }

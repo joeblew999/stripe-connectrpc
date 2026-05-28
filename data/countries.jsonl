@@ -1,0 +1,60 @@
+{"code":"US","name":"United States","region":"americas","currency":"usd","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"CA","name":"Canada","region":"americas","currency":"cad","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"MX","name":"Mexico","region":"americas","currency":"mxn","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"BR","name":"Brazil","region":"americas","currency":"brl","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"GB","name":"United Kingdom","region":"europe","currency":"gbp","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"IE","name":"Ireland","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"FR","name":"France","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"DE","name":"Germany","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"NL","name":"Netherlands","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"BE","name":"Belgium","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"LU","name":"Luxembourg","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"ES","name":"Spain","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"PT","name":"Portugal","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"IT","name":"Italy","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"CH","name":"Switzerland","region":"europe","currency":"chf","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"AT","name":"Austria","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"LI","name":"Liechtenstein","region":"europe","currency":"chf","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"GI","name":"Gibraltar","region":"europe","currency":"gbp","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"MT","name":"Malta","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"CY","name":"Cyprus","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"GR","name":"Greece","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"DK","name":"Denmark","region":"europe","currency":"dkk","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"SE","name":"Sweden","region":"europe","currency":"sek","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"NO","name":"Norway","region":"europe","currency":"nok","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"FI","name":"Finland","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"EE","name":"Estonia","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"LV","name":"Latvia","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"LT","name":"Lithuania","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"PL","name":"Poland","region":"europe","currency":"pln","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"CZ","name":"Czech Republic","region":"europe","currency":"czk","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"SK","name":"Slovakia","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"HU","name":"Hungary","region":"europe","currency":"huf","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"SI","name":"Slovenia","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"HR","name":"Croatia","region":"europe","currency":"eur","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"RO","name":"Romania","region":"europe","currency":"ron","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"BG","name":"Bulgaria","region":"europe","currency":"bgn","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"AU","name":"Australia","region":"asia-pacific","currency":"aud","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"NZ","name":"New Zealand","region":"asia-pacific","currency":"nzd","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"JP","name":"Japan","region":"asia-pacific","currency":"jpy","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"HK","name":"Hong Kong","region":"asia-pacific","currency":"hkd","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"SG","name":"Singapore","region":"asia-pacific","currency":"sgd","seller_modes":["smp","payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"MY","name":"Malaysia","region":"asia-pacific","currency":"myr","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"TH","name":"Thailand","region":"asia-pacific","currency":"thb","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"AE","name":"United Arab Emirates","region":"middle-east","currency":"aed","seller_modes":["payments"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"IN","name":"India","region":"asia-pacific","currency":"inr","seller_modes":["payments"],"payments_preview":true,"buyer_blocked_modes":[]}
+{"code":"ID","name":"Indonesia","region":"asia-pacific","currency":"idr","seller_modes":["payments"],"payments_preview":true,"buyer_blocked_modes":[]}
+{"code":"CI","name":"Côte d'Ivoire","region":"africa","currency":"xof","seller_modes":["paystack"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"GH","name":"Ghana","region":"africa","currency":"ghs","seller_modes":["paystack"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"KE","name":"Kenya","region":"africa","currency":"kes","seller_modes":["paystack"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"NG","name":"Nigeria","region":"africa","currency":"ngn","seller_modes":["paystack"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"ZA","name":"South Africa","region":"africa","currency":"zar","seller_modes":["paystack"],"payments_preview":false,"buyer_blocked_modes":[]}
+{"code":"AC","name":"Ascension Island","region":"africa","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"CN","name":"China","region":"asia-pacific","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"CU","name":"Cuba","region":"americas","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"IR","name":"Iran","region":"middle-east","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"XK","name":"Kosovo","region":"europe","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"KP","name":"North Korea","region":"asia-pacific","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"RU","name":"Russia","region":"europe","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"SY","name":"Syria","region":"middle-east","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}
+{"code":"TA","name":"Tristan da Cunha","region":"africa","currency":null,"seller_modes":[],"payments_preview":false,"buyer_blocked_modes":["smp"]}

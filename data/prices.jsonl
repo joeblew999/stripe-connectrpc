@@ -1,0 +1,6 @@
+{"lookup_key":"sports_player_monthly_usd","product":"sports_player","unit_amount":900,"currency":"usd","interval":"month"}
+{"lookup_key":"sports_player_yearly_usd","product":"sports_player","unit_amount":9000,"currency":"usd","interval":"year"}
+{"lookup_key":"sports_coach_monthly_usd","product":"sports_coach","unit_amount":2900,"currency":"usd","interval":"month"}
+{"lookup_key":"sports_coach_yearly_usd","product":"sports_coach","unit_amount":29000,"currency":"usd","interval":"year"}
+{"lookup_key":"sports_club_monthly_usd","product":"sports_club","unit_amount":9900,"currency":"usd","interval":"month"}
+{"lookup_key":"sports_club_yearly_usd","product":"sports_club","unit_amount":99000,"currency":"usd","interval":"year"}

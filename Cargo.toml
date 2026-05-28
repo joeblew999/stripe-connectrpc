@@ -1,0 +1,42 @@
+[package]
+name = "smp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Joe Blew <gedw99@gmail.com>"]
+description = "Stripe Managed Payments shared service on Cloudflare Workers (Rust/wasm32)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/joeblew999/smp"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Workers runtime.
+worker        = "0.8"
+worker-macros = "0.8"
+
+# async-stripe runtime-free sub-crates. Verified to compile against
+# wasm32-unknown-unknown via /tmp/smp-wasm-probe (2026-05-28). We
+# intentionally skip the `async-stripe` crate itself (tokio/hyper/rustls
+# HTTP client) — outbound Stripe calls go through `worker::Fetch` via a
+# `StripeClient` adapter (forthcoming).
+async-stripe-types       = "1.0.0-rc.5"
+async-stripe-client-core = "1.0.0-rc.5"
+async-stripe-webhook     = { version = "1.0.0-rc.5", features = ["deserialize", "async-stripe-checkout"] }
+async-stripe-checkout    = { version = "1.0.0-rc.5", features = ["deserialize"] }
+
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror  = "2"
+
+# Better panics in the Workers log.
+console_error_panic_hook = "0.1"
+
+[profile.release]
+# Wasm size matters — Workers has a 10 MB compressed bundle limit on paid
+# plan. Optimize for size; LTO catches dead-code in the generated/* crates.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

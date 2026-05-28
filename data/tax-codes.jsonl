@@ -1,0 +1,72 @@
+{"code":"txcd_10000000","name":"General - Electronically Supplied Services","group":"general"}
+{"code":"txcd_10010001","name":"Infrastructure as a service (IaaS) - personal use","group":"iaas"}
+{"code":"txcd_10101000","name":"Infrastructure as a service (IaaS) - business use","group":"iaas"}
+{"code":"txcd_10102000","name":"Platform as a service (PaaS) - business use","group":"paas"}
+{"code":"txcd_10102001","name":"Platform as a Service (PaaS) - personal use","group":"paas"}
+{"code":"txcd_10103000","name":"Software as a service (SaaS) - personal use","group":"saas"}
+{"code":"txcd_10103001","name":"Software as a service (SaaS) - business use","group":"saas"}
+{"code":"txcd_10103100","name":"Software as a service (SaaS) - electronic download - personal use","group":"saas"}
+{"code":"txcd_10103101","name":"Software as a service (SaaS) - electronic download - business use","group":"saas"}
+{"code":"txcd_10201000","name":"Video Games - downloaded - non subscription - with permanent rights","group":"games"}
+{"code":"txcd_10201001","name":"Video Games - downloaded - non subscription - with limited rights","group":"games"}
+{"code":"txcd_10201002","name":"Video Games - downloaded - subscription - with conditional rights","group":"games"}
+{"code":"txcd_10201003","name":"Video Games - streamed - non subscription - with limited rights","group":"games"}
+{"code":"txcd_10201004","name":"Video Games - streamed - subscription - with conditional rights","group":"games"}
+{"code":"txcd_10202000","name":"Downloadable Software - personal use","group":"software"}
+{"code":"txcd_10202001","name":"Downloadable Software - non-recreational - personal use","group":"software"}
+{"code":"txcd_10202003","name":"Downloadable Software - business use","group":"software"}
+{"code":"txcd_10301000","name":"Audiobook","group":"books"}
+{"code":"txcd_10302000","name":"Digital Books - downloaded - non subscription - with permanent rights","group":"books"}
+{"code":"txcd_10302001","name":"Digital Books - downloaded - non subscription - with limited rights","group":"books"}
+{"code":"txcd_10302002","name":"Digital Books - downloaded - subscription - with conditional rights","group":"books"}
+{"code":"txcd_10302003","name":"Digital Books - viewable only - subscription - with conditional rights","group":"books"}
+{"code":"txcd_10303000","name":"Digital Magazines/Periodicals - downloadable - subscription - with conditional rights","group":"periodicals"}
+{"code":"txcd_10303002","name":"Digital Magazines/Periodicals - viewable only - subscription - with conditional rights","group":"periodicals"}
+{"code":"txcd_10303100","name":"Digital Magazines/Periodicals - downloadable - non subscription - with permanent rights","group":"periodicals"}
+{"code":"txcd_10303101","name":"Digital Magazines/Periodicals - viewable only - non subscription - with limited rights","group":"periodicals"}
+{"code":"txcd_10303102","name":"Digital Magazines/Periodicals - viewable only - non subscription - with permanent rights","group":"periodicals"}
+{"code":"txcd_10303104","name":"Digital Magazines/Periodicals - downloadable - non subscription - with limited rights","group":"periodicals"}
+{"code":"txcd_10304000","name":"Digital Newspapers - downloadable - non subscription - with permanent rights","group":"newspapers"}
+{"code":"txcd_10304001","name":"Digital Newspapers - viewable only - non subscription - with limited rights","group":"newspapers"}
+{"code":"txcd_10304002","name":"Digital Newspapers - viewable only - non subscription - with permanent rights","group":"newspapers"}
+{"code":"txcd_10304003","name":"Digital Newspapers - downloadable - non subscription - with limited rights","group":"newspapers"}
+{"code":"txcd_10304100","name":"Digital Newspapers - downloadable - subscription - with conditional rights","group":"newspapers"}
+{"code":"txcd_10304102","name":"Digital Newspapers - viewable only - subscription - with conditional rights","group":"newspapers"}
+{"code":"txcd_10305000","name":"Digital School Textbooks - downloaded - non subscription - with limited rights","group":"textbooks"}
+{"code":"txcd_10305001","name":"Digital School Textbooks - downloaded - non subscription - with permanent rights","group":"textbooks"}
+{"code":"txcd_10401000","name":"Digital Audio Works - streamed - non subscription - with limited rights","group":"audio"}
+{"code":"txcd_10401001","name":"Digital Audio Works - downloaded - non subscription - with limited rights","group":"audio"}
+{"code":"txcd_10401100","name":"Digital Audio Works - downloaded - non subscription - with permanent rights","group":"audio"}
+{"code":"txcd_10401200","name":"Digital Audio Works - streamed - subscription - with conditional rights","group":"audio"}
+{"code":"txcd_10402000","name":"Digital Audio Visual Works - streamed - non subscription - with limited rights","group":"video"}
+{"code":"txcd_10402100","name":"Digital Audio Visual Works - downloaded - non subscription - with permanent rights","group":"video"}
+{"code":"txcd_10402110","name":"Digital Audio Visual Works - downloaded - non subscription - with limited rights","group":"video"}
+{"code":"txcd_10402200","name":"Digital Audio Visual Works - streamed - subscription - with conditional rights","group":"video"}
+{"code":"txcd_10501000","name":"Digital Photographs/Images - downloaded - non subscription - with permanent rights","group":"images"}
+{"code":"txcd_10503000","name":"Digital other news or documents - downloadable - non subscription - with permanent rights","group":"documents"}
+{"code":"txcd_10503001","name":"Digital other news or documents - downloadable - non subscription - with limited rights","group":"documents"}
+{"code":"txcd_10503002","name":"Digital other news or documents - downloadable - subscription - with conditional rights","group":"documents"}
+{"code":"txcd_10503003","name":"Digital other news or documents - viewable only - non subscription - with limited rights","group":"documents"}
+{"code":"txcd_10503004","name":"Digital other news or documents - viewable only - non subscription - with permanent rights","group":"documents"}
+{"code":"txcd_10503005","name":"Digital other news or documents - viewable only - subscription - with conditional rights","group":"documents"}
+{"code":"txcd_10504003","name":"Electronic software documentation or user manuals - Prewritten, electronic delivery","group":"software"}
+{"code":"txcd_10505000","name":"Digital Finished Artwork - downloaded - non subscription - with limited rights","group":"artwork"}
+{"code":"txcd_10505001","name":"Digital Finished Artwork - downloaded - non subscription - with permanent rights","group":"artwork"}
+{"code":"txcd_10505002","name":"Digital Finished Artwork - downloaded - subscription - with conditional rights","group":"artwork"}
+{"code":"txcd_10506000","name":"Digital Greeting Cards - Audio Only","group":"greeting-cards"}
+{"code":"txcd_10506001","name":"Digital Greeting Cards - Audio Visual","group":"greeting-cards"}
+{"code":"txcd_10506002","name":"Digital Greeting Cards - Static text and/or images only","group":"greeting-cards"}
+{"code":"txcd_10701100","name":"Website Hosting","group":"web-services"}
+{"code":"txcd_10701400","name":"Website Information Services - Business Use","group":"web-services"}
+{"code":"txcd_10701401","name":"Website Information Services - Personal Use","group":"web-services"}
+{"code":"txcd_10701410","name":"Electronically Delivered Information Services - Business Use","group":"web-services"}
+{"code":"txcd_10701411","name":"Electronically Delivered Information Services - Personal Use","group":"web-services"}
+{"code":"txcd_10804001","name":"Digital Audio Visual Works - bundle - downloaded with permanent rights and streamed - subscription - with conditional rights","group":"video"}
+{"code":"txcd_10804002","name":"Digital Audio Visual Works - bundle - downloaded with limited rights and streamed - non subscription","group":"video"}
+{"code":"txcd_10804003","name":"Digital Audio Visual Works - bundle - downloaded with permanent rights and streamed - non subscription","group":"video"}
+{"code":"txcd_10804010","name":"Digital Audio Works - bundle - downloaded with permanent rights and streamed - subscription - with conditional rights","group":"audio"}
+{"code":"txcd_20060058","name":"Training Services - Self-study Web-based","group":"training"}
+{"code":"txcd_20060158","name":"On demand Online Courses - pre-recorded audio or audio visual content (streamed)","group":"training"}
+{"code":"txcd_20060258","name":"On demand Online Courses - pre-recorded audio or audio visual content (streamed and downloadable)","group":"training"}
+{"code":"txcd_20060358","name":"On demand Online Courses - written material content (viewable or viewable and downloadable)","group":"training"}
+{"code":"txcd_37071001","name":"Software Maintenance Agreement - Optional, Prewritten, Electronic Delivery, Updates Only","group":"software"}

@@ -1,0 +1,254 @@
+[tools]
+rust = "1.88"
+"aqua:nushell/nushell" = "latest"
+"aqua:stripe/stripe-cli" = "latest"
+"npm:wrangler" = "latest"
+"cargo:worker-build" = "latest"
+
+[env]
+WASM_TARGET = "wasm32-unknown-unknown"
+RUST_BACKTRACE = "1"
+
+
+# =============================================================================
+# Bootstrap — first-time setup on a fresh clone
+# =============================================================================
+
+[tasks."mise:install"]
+description = "Install all CLI tools declared in [tools]"
+shell = "nu -c"
+run = "mise install"
+
+[tasks."onboard"]
+description = "Interactive: collect CF + Stripe creds, store in macOS keychain via fnox"
+shell = "nu -c"
+file = "scripts/onboard.nu"
+
+[tasks."verify"]
+description = "Check toolchain + keychain entries + wasm compile"
+shell = "nu -c"
+file = "scripts/verify.nu"
+
+
+# =============================================================================
+# cargo:* — local Rust dev loop
+# =============================================================================
+
+[tasks."cargo:check"]
+description = "cargo check against wasm32-unknown-unknown"
+shell = "nu -c"
+run = "cargo check --target $env.WASM_TARGET"
+
+[tasks."cargo:build"]
+description = "Build the worker via worker-build (release, size-optimized)"
+shell = "nu -c"
+run = "worker-build --release"
+
+[tasks."cargo:clean"]
+description = "Clean cargo + worker-build output"
+shell = "nu -c"
+run = "cargo clean ; rm -rf build"
+
+
+# =============================================================================
+# worker:* — wrangler dev / deploy / logs / secrets
+# =============================================================================
+
+[tasks."worker:dev"]
+description = "Run wrangler dev locally (env resolved via fnox)"
+shell = "nu -c"
+run = "fnox exec -- wrangler dev"
+
+[tasks."worker:deploy"]
+description = "Deploy worker to Cloudflare"
+shell = "nu -c"
+run = "fnox exec -- wrangler deploy"
+
+[tasks."worker:tail"]
+description = "Tail live Worker logs"
+shell = "nu -c"
+run = "fnox exec -- wrangler tail"
+
+[tasks."worker:secret-put"]
+description = "Push STRIPE_* secrets from fnox keychain → wrangler secrets"
+shell = "nu -c"
+run = '''
+fnox exec -- nu -c '$env.STRIPE_SECRET_KEY     | wrangler secret put STRIPE_SECRET_KEY'
+fnox exec -- nu -c '$env.STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
+'''
+
+
+# =============================================================================
+# stripe:* — Stripe CLI for local webhook testing
+# =============================================================================
+
+[tasks."stripe:login"]
+description = "Pair stripe-cli with your Stripe account (browser; stores restricted key in ~/.config/stripe)"
+shell = "nu -c"
+run = "stripe login"
+
+
+# =============================================================================
+# open:* — launch dashboard pages in the default browser
+# =============================================================================
+
+[tasks."open:stripe-keys"]
+description = "Stripe Dashboard → API keys (TEST mode)"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-keys"
+
+[tasks."open:stripe-account"]
+description = "Stripe Dashboard → Account settings"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-account"
+
+[tasks."open:stripe-onboard"]
+description = "Stripe Dashboard → Activation onboarding"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-onboard"
+
+[tasks."open:stripe-smp"]
+description = "Stripe Dashboard → Managed Payments settings"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-smp"
+
+[tasks."open:stripe-webhooks"]
+description = "Stripe Dashboard → Webhooks (TEST mode)"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-webhooks"
+
+[tasks."open:stripe-products"]
+description = "Stripe Dashboard → Products"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-products"
+
+[tasks."open:stripe-dashboard"]
+description = "Stripe Dashboard (TEST mode home)"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-dashboard"
+
+[tasks."open:cf-tokens"]
+description = "Cloudflare → API tokens"
+shell = "nu -c"
+run = "nu scripts/open.nu cf-tokens"
+
+[tasks."open:cf-account"]
+description = "Cloudflare → Dashboard (account id in sidebar)"
+shell = "nu -c"
+run = "nu scripts/open.nu cf-account"
+
+[tasks."stripe:listen"]
+description = "Forward Stripe webhooks to local wrangler dev (prints whsec_ for keychain)"
+shell = "nu -c"
+run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
+
+[tasks."stripe:trigger-completed"]
+description = "Trigger a test checkout.session.completed event"
+shell = "nu -c"
+run = "fnox exec -- stripe trigger checkout.session.completed"
+
+
+# =============================================================================
+# bootstrap:* — Stripe-side state setup (driven by data/*.jsonl + stripe-cli)
+# All wrapped in `fnox exec --` so STRIPE_API_KEY is in scope for stripe-cli.
+# =============================================================================
+
+[tasks."bootstrap:account"]
+description = "Show Stripe account info — mode, country, currency, capabilities"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu account"
+
+[tasks."bootstrap:status"]
+description = "Snapshot — webhook endpoints, products, prices, portal configs"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu status"
+
+[tasks."bootstrap:webhook"]
+description = "Create Stripe webhook endpoint pointing at deployed Worker (uses SMP_WORKER_URL)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu webhook"
+
+[tasks."bootstrap:portal"]
+description = "Configure default Customer Portal (cancel / update / invoice history)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu portal"
+
+[tasks."bootstrap:products"]
+description = "Seed Stripe Products from data/products.jsonl (idempotent)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu products"
+
+[tasks."bootstrap:prices"]
+description = "Seed Stripe Prices from data/prices.jsonl (idempotent)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu prices"
+
+[tasks."bootstrap:all"]
+description = "Full Stripe-side seed: products → prices → portal → webhook"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu all"
+
+[tasks."bootstrap:countries"]
+description = "Show seller countries with SMP-eligible vs Stripe-Payments-only marker"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu countries"
+
+[tasks."bootstrap:tax-codes"]
+description = "Show SMP-eligible tax codes grouped by category (73 codes)"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu tax-codes"
+
+[tasks."bootstrap:launches"]
+description = "Show tracked project × jurisdiction launches with stage"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu launches"
+
+
+# =============================================================================
+# data:* — keep data/*.jsonl in sync with Stripe's docs
+# =============================================================================
+
+[tasks."data:check"]
+description = "Fetch Stripe SMP eligibility upstream, diff vs current data/*.jsonl"
+shell = "nu -c"
+run = "nu scripts/data-refresh.nu check"
+
+[tasks."data:refresh"]
+description = "Apply upstream changes to data/*.jsonl (currently stub — see data:check + edit)"
+shell = "nu -c"
+run = "nu scripts/data-refresh.nu apply"
+
+[tasks."data:scan"]
+description = "Summary view of all data/ files"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu scan"
+
+[tasks."flow"]
+description = "Print the end-to-end smp flow (supported-country Stripe account)"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu flow"
+
+
+# =============================================================================
+# test:* — sandbox payment loop
+# =============================================================================
+
+[tasks."test:customer"]
+description = "Create a test customer in Stripe (smp-test@example.com)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu test-customer"
+
+[tasks."test:checkout"]
+description = "Checkout Session in SMP mode (Stripe is MoR; default: sports_coach_monthly_usd)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu test-checkout"
+
+[tasks."test:checkout-payments"]
+description = "Checkout Session in Stripe Payments mode (we are MoR; automatic_tax enabled)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-payments"
+
+[tasks."check-country"]
+description = "Show what modes a country supports — usage: mise run check-country -- TH"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu check-country"
