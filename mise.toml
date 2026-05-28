@@ -213,6 +213,11 @@ description = "Show tracked project × jurisdiction launches with stage"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu launches"
 
+[tasks."bootstrap:projects"]
+description = "List registered consumer projects under data/projects/"
+shell = "nu -c"
+run = "nu scripts/bootstrap.nu projects"
+
 
 # =============================================================================
 # data:* — keep data/*.jsonl in sync with Stripe's docs

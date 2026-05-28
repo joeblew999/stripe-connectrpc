@@ -26,6 +26,7 @@ def main [
         "tax-codes"     => { print_tax_codes }
         "tax-coverage"  => { print_tax_coverage }
         "launches"      => { print_launches }
+        "projects"      => { print_projects }
         "scan"          => { print_scan }
         "flow"          => { print_flow }
 
@@ -40,7 +41,7 @@ def main [
             print $"unknown subcommand: ($cmd)"
             print ""
             print "setup:  products | prices | webhook | portal | all"
-            print "info:   status | account | countries | tax-codes | tax-coverage | launches | scan | flow"
+            print "info:   status | account | countries | tax-codes | tax-coverage | launches | projects | scan | flow"
             print "        check-country <ISO>"
             print "        check-tax <ISO>           (is buyer country covered by SMP tax?)"
             print "test:   test-customer"
@@ -55,45 +56,116 @@ def main [
 # Setup
 # =============================================================================
 
+# Iterate every data/projects/<slug>/ directory and seed its products with
+# metadata.project=<slug>. If a product already exists in Stripe, ensure
+# the metadata is set (backfill safely). Re-running is always idempotent.
 def seed_products [] {
-    let rows = (open --raw data/products.jsonl | lines | each {|l| $l | from json})
-    print $"seeding (($rows | length)) products from data/products.jsonl"
+    let projects = (list_projects)
+    print $"seeding products across (($projects | length)) project dirs"
+    for proj in $projects {
+        seed_products_for_project $proj
+    }
+}
+
+def list_projects [] {
+    if not ("data/projects" | path exists) {
+        return []
+    }
+    ls data/projects | where type == "dir" | get name | each {|dir|
+        let json_path = ([$dir "project.json"] | path join)
+        if ($json_path | path exists) {
+            let p = (open --raw $json_path | from json)
+            $p | merge { dir: $dir }
+        } else {
+            null
+        }
+    } | compact
+}
+
+def seed_products_for_project [project: record] {
+    let products_path = ([$project.dir "products.jsonl"] | path join)
+    if not ($products_path | path exists) {
+        print $"  · ($project.slug) — no products.jsonl, skipping"
+        return
+    }
+    let rows = (open --raw $products_path | lines | each {|l| $l | from json})
+    print $"  project ($project.slug):  (($rows | length)) products"
     for p in $rows {
-        # stripe-cli returns exit 0 even on API 404, with the error in the
-        # body — so we can't trust exit_code. Parse JSON and check whether
-        # the returned object's id matches what we asked for.
         let exists = (^stripe products retrieve $p.id | complete)
         let exists_body = (try { $exists.stdout | from json } catch { {} })
-        if (($exists_body | get --optional id) == $p.id) {
-            print $"  ✓ ($p.id) already exists"
+        let already = (($exists_body | get --optional id) == $p.id)
+
+        if $already {
+            # Backfill metadata.project if missing/wrong.
+            let current = ($exists_body | get --optional metadata.project | default "")
+            if $current != $project.slug {
+                let upd = (^stripe post $"/v1/products/($p.id)"
+                    -d $"metadata[project]=($project.slug)"
+                    | complete)
+                let upd_body = (try { $upd.stdout | from json } catch { {} })
+                if (($upd_body | get --optional id) == $p.id) {
+                    print $"    ✓ ($p.id) — backfilled metadata.project=($project.slug)"
+                } else {
+                    print $"    ✗ ($p.id) — failed to set metadata"
+                }
+            } else {
+                print $"    ✓ ($p.id) — already tagged"
+            }
             continue
         }
+
         let r = (^stripe post /v1/products
             -d $"id=($p.id)"
             -d $"name=($p.name)"
             -d $"description=($p.description)"
             -d $"tax_code=($p.tax_code)"
+            -d $"metadata[project]=($project.slug)"
             | complete)
         let resp = (try { $r.stdout | from json } catch { {} })
         if (($resp | get --optional id) == $p.id) {
-            print $"  ✓ created ($p.id)"
+            print $"    ✓ created ($p.id)"
         } else {
             let msg = ($resp | get --optional error.message | default $r.stdout)
-            print $"  ✗ ($p.id) failed: ($msg)"
+            print $"    ✗ ($p.id) failed: ($msg)"
         }
     }
 }
 
 def seed_prices [] {
-    let rows = (open --raw data/prices.jsonl | lines | each {|l| $l | from json})
-    print $"seeding (($rows | length)) prices from data/prices.jsonl"
+    let projects = (list_projects)
+    print $"seeding prices across (($projects | length)) project dirs"
+    for proj in $projects {
+        seed_prices_for_project $proj
+    }
+}
+
+def seed_prices_for_project [project: record] {
+    let prices_path = ([$project.dir "prices.jsonl"] | path join)
+    if not ($prices_path | path exists) {
+        print $"  · ($project.slug) — no prices.jsonl, skipping"
+        return
+    }
+    let rows = (open --raw $prices_path | lines | each {|l| $l | from json})
+    print $"  project ($project.slug):  (($rows | length)) prices"
     for p in $rows {
         let listing = (^stripe prices list --lookup-keys $p.lookup_key --limit 1 | complete)
-        let existing_count = if $listing.exit_code == 0 {
-            try { ($listing.stdout | from json | get data | length) } catch { 0 }
-        } else { 0 }
-        if $existing_count > 0 {
-            print $"  ✓ ($p.lookup_key) already exists"
+        let listed = (try { $listing.stdout | from json | get data } catch { [] })
+        if ($listed | length) > 0 {
+            let existing = ($listed | first)
+            let current = ($existing | get --optional metadata.project | default "")
+            if $current != $project.slug {
+                let upd = (^stripe post $"/v1/prices/($existing.id)"
+                    -d $"metadata[project]=($project.slug)"
+                    | complete)
+                let upd_body = (try { $upd.stdout | from json } catch { {} })
+                if (($upd_body | get --optional id) == $existing.id) {
+                    print $"    ✓ ($p.lookup_key) — backfilled metadata.project=($project.slug)"
+                } else {
+                    print $"    ✗ ($p.lookup_key) — failed to set metadata"
+                }
+            } else {
+                print $"    ✓ ($p.lookup_key) — already tagged"
+            }
             continue
         }
         let r = (^stripe post /v1/prices
@@ -102,14 +174,14 @@ def seed_prices [] {
             -d $"currency=($p.currency)"
             -d $"recurring[interval]=($p.interval)"
             -d $"lookup_key=($p.lookup_key)"
+            -d $"metadata[project]=($project.slug)"
             | complete)
-        # Same exit-code trap as seed_products — verify by parsing body.
         let resp = (try { $r.stdout | from json } catch { {} })
         if ((($resp | get --optional id) | default "") | str starts-with "price_") {
-            print $"  ✓ created ($p.lookup_key) → (($resp.id))"
+            print $"    ✓ created ($p.lookup_key) → (($resp.id))"
         } else {
             let msg = ($resp | get --optional error.message | default $r.stdout)
-            print $"  ✗ ($p.lookup_key) failed: ($msg)"
+            print $"    ✗ ($p.lookup_key) failed: ($msg)"
         }
     }
 }
@@ -318,8 +390,15 @@ def print_scan [] {
     let paystack = ($countries | where {|c| "paystack" in $c.seller_modes} | length)
     let blocked = ($countries | where {|c| ($c.buyer_blocked_modes | length) > 0} | length)
     let tax = (open --raw data/reference/tax-codes.jsonl | lines | length)
-    let products = (open --raw data/products.jsonl | lines | length)
-    let prices = (open --raw data/prices.jsonl | lines | length)
+    let projects = (list_projects)
+    let total_products = ($projects | each {|p|
+        let path = ([$p.dir "products.jsonl"] | path join)
+        if ($path | path exists) { open --raw $path | lines | length } else { 0 }
+    } | math sum)
+    let total_prices = ($projects | each {|p|
+        let path = ([$p.dir "prices.jsonl"] | path join)
+        if ($path | path exists) { open --raw $path | lines | length } else { 0 }
+    } | math sum)
     let launches = (open --raw data/launches.jsonl | lines | length)
     let tax_cov = (open --raw data/reference/tax-coverage.jsonl | lines | length)
 
@@ -330,9 +409,16 @@ def print_scan [] {
     print $"  tax-codes.jsonl     ($tax) rows — SMP-eligible product tax codes"
     print $"  tax-coverage.jsonl  ($tax_cov) rows — buyer countries Stripe handles tax for under SMP"
     print ""
+    print "projects/   (consumer apps — each with its own catalog)"
+    for p in $projects {
+        let products_path = ([$p.dir "products.jsonl"] | path join)
+        let prices_path = ([$p.dir "prices.jsonl"] | path join)
+        let np = if ($products_path | path exists) { open --raw $products_path | lines | length } else { 0 }
+        let nx = if ($prices_path | path exists) { open --raw $prices_path | lines | length } else { 0 }
+        print $"  ($p.slug)/        ($np) products, ($nx) prices"
+    }
+    print ""
     print "ours  (hand-curated)"
-    print $"  products.jsonl      ($products) rows — what we sell"
-    print $"  prices.jsonl        ($prices) rows — per product/interval/currency"
     print $"  launches.jsonl      ($launches) rows — per project × jurisdiction × mode"
 }
 
@@ -414,6 +500,28 @@ def check_tax_coverage [code: string] {
         print $"  ⚠ domestic exception: ($m.domestic_excluded)"
         print "  Stripe DOES handle cross-border sales TO this country."
         print "  Stripe does NOT handle domestic sales FROM a seller in this country (you'd remit yourself)."
+    }
+}
+
+def print_projects [] {
+    let projects = (list_projects)
+    print $"registered projects: (($projects | length))"
+    for p in $projects {
+        let products_path = ([$p.dir "products.jsonl"] | path join)
+        let prices_path = ([$p.dir "prices.jsonl"] | path join)
+        let n_products = if ($products_path | path exists) {
+            open --raw $products_path | lines | length
+        } else { 0 }
+        let n_prices = if ($prices_path | path exists) {
+            open --raw $prices_path | lines | length
+        } else { 0 }
+        print $"  ✓ ($p.slug)"
+        print $"      name:        ($p.name)"
+        let domain = ($p | get --optional domain | default "—")
+        let repo = ($p | get --optional github_repo | default "—")
+        print $"      domain:      ($domain)"
+        print $"      repo:        ($repo)"
+        print $"      catalog:     ($n_products) products, ($n_prices) prices"
     }
 }
 
