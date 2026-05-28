@@ -1,0 +1,3 @@
+{"lookup_key":"demo_basic_monthly_usd","product":"demo_basic","unit_amount":500,"currency":"usd","interval":"month"}
+{"lookup_key":"demo_pro_monthly_usd","product":"demo_pro","unit_amount":1500,"currency":"usd","interval":"month"}
+{"lookup_key":"demo_enterprise_monthly_usd","product":"demo_enterprise","unit_amount":5000,"currency":"usd","interval":"month"}

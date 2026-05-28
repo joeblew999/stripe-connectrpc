@@ -18,6 +18,13 @@ def main [
         "webhook"       => { register_webhook }
         "portal"        => { configure_portal }
         "all"           => { seed_products ; seed_prices ; configure_portal ; register_webhook }
+        "teardown"      => {
+            if ($arg | is-empty) {
+                print "✗ teardown requires a project slug: nu scripts/bootstrap.nu teardown <slug>"
+                exit 1
+            }
+            teardown_project $arg
+        }
 
         # Info
         "status"        => { show_status }
@@ -34,19 +41,22 @@ def main [
         "test-customer"          => { test_customer }
         "test-checkout"          => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
         "test-checkout-payments" => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
+        "test-checkout-thai"     => { test_checkout_thai_promptpay }
         "check-country"          => { check_country ($arg | default "TH") }
         "check-tax"              => { check_tax_coverage ($arg | default "TH") }
 
         _ => {
             print $"unknown subcommand: ($cmd)"
             print ""
-            print "setup:  products | prices | webhook | portal | all"
+            print "setup:    products | prices | webhook | portal | all"
+            print "teardown: teardown <slug>   (archives products+prices for one project)"
             print "info:   status | account | countries | tax-codes | tax-coverage | launches | projects | scan | flow"
             print "        check-country <ISO>"
             print "        check-tax <ISO>           (is buyer country covered by SMP tax?)"
             print "test:   test-customer"
             print "        test-checkout          [lookup_key]   (SMP mode)"
             print "        test-checkout-payments [lookup_key]   (Stripe Payments — we are MoR)"
+            print "        test-checkout-thai                    (Thai buyer via PromptPay — Payments mode only)"
             exit 1
         }
     }
@@ -96,20 +106,27 @@ def seed_products_for_project [project: record] {
         let already = (($exists_body | get --optional id) == $p.id)
 
         if $already {
-            # Backfill metadata.project if missing/wrong.
+            # Always ensure metadata.project is set AND active=true. This makes
+            # bootstrap the inverse of teardown — re-running brings archived
+            # products back. Idempotent: same result whether already-good or
+            # being re-activated after teardown.
             let current = ($exists_body | get --optional metadata.project | default "")
-            if $current != $project.slug {
-                let upd = (^stripe post $"/v1/products/($p.id)"
-                    -d $"metadata[project]=($project.slug)"
-                    | complete)
-                let upd_body = (try { $upd.stdout | from json } catch { {} })
-                if (($upd_body | get --optional id) == $p.id) {
-                    print $"    ✓ ($p.id) — backfilled metadata.project=($project.slug)"
-                } else {
-                    print $"    ✗ ($p.id) — failed to set metadata"
-                }
+            let active = ($exists_body | get --optional active | default true)
+            if $current == $project.slug and $active {
+                print $"    ✓ ($p.id) — already tagged + active"
+                continue
+            }
+            let upd = (^stripe post $"/v1/products/($p.id)"
+                -d $"metadata[project]=($project.slug)"
+                -d "active=true"
+                | complete)
+            let upd_body = (try { $upd.stdout | from json } catch { {} })
+            if (($upd_body | get --optional id) == $p.id) {
+                let was_inactive = if not $active { " (re-activated)" } else { "" }
+                let backfilled = if $current != $project.slug { " (metadata backfilled)" } else { "" }
+                print $"    ✓ ($p.id) — ensured tag + active($was_inactive)($backfilled)"
             } else {
-                print $"    ✓ ($p.id) — already tagged"
+                print $"    ✗ ($p.id) — failed to update"
             }
             continue
         }
@@ -153,18 +170,21 @@ def seed_prices_for_project [project: record] {
         if ($listed | length) > 0 {
             let existing = ($listed | first)
             let current = ($existing | get --optional metadata.project | default "")
-            if $current != $project.slug {
-                let upd = (^stripe post $"/v1/prices/($existing.id)"
-                    -d $"metadata[project]=($project.slug)"
-                    | complete)
-                let upd_body = (try { $upd.stdout | from json } catch { {} })
-                if (($upd_body | get --optional id) == $existing.id) {
-                    print $"    ✓ ($p.lookup_key) — backfilled metadata.project=($project.slug)"
-                } else {
-                    print $"    ✗ ($p.lookup_key) — failed to set metadata"
-                }
+            let active = ($existing | get --optional active | default true)
+            if $current == $project.slug and $active {
+                print $"    ✓ ($p.lookup_key) — already tagged + active"
+                continue
+            }
+            let upd = (^stripe post $"/v1/prices/($existing.id)"
+                -d $"metadata[project]=($project.slug)"
+                -d "active=true"
+                | complete)
+            let upd_body = (try { $upd.stdout | from json } catch { {} })
+            if (($upd_body | get --optional id) == $existing.id) {
+                let was_inactive = if not $active { " (re-activated)" } else { "" }
+                print $"    ✓ ($p.lookup_key) — ensured tag + active($was_inactive)"
             } else {
-                print $"    ✓ ($p.lookup_key) — already tagged"
+                print $"    ✗ ($p.lookup_key) — failed to update"
             }
             continue
         }
@@ -233,6 +253,87 @@ def register_webhook [] {
         print $r.stdout
         exit 1
     }
+}
+
+# Tear down one project's Stripe-side state. Archives products + prices
+# (Stripe can't delete them, only set active=false). Cross-leak protection:
+# we ONLY touch objects whose metadata.project matches the requested slug.
+# Combined with "we only iterate THIS project's products.jsonl", an object
+# tagged for a different project is double-skipped.
+def teardown_project [slug: string] {
+    let proj_dir = ([("data/projects") $slug] | path join)
+    let proj_json = ([$proj_dir "project.json"] | path join)
+    if not ($proj_json | path exists) {
+        print $"✗ no project at ($proj_dir)"
+        exit 1
+    }
+    let project = (open --raw $proj_json | from json)
+    if $project.slug != $slug {
+        print $"✗ project.slug='($project.slug)' does not match directory name '($slug)'"
+        exit 1
+    }
+    print $"=== teardown ($project.slug) — ($project.name) ==="
+
+    # Deactivate prices first (more conservative ordering — even though Stripe
+    # allows archiving products with active prices, prices-then-products is
+    # the cleaner sequence for state machines).
+    let prices_path = ([$proj_dir "prices.jsonl"] | path join)
+    if ($prices_path | path exists) {
+        let rows = (open --raw $prices_path | lines | each {|l| $l | from json})
+        print $"  ($rows | length) prices declared in project"
+        for p in $rows {
+            let listing = (^stripe prices list --lookup-keys $p.lookup_key --limit 10 | complete)
+            let listed = (try { $listing.stdout | from json | get data } catch { [] })
+            if ($listed | length) == 0 {
+                print $"    · ($p.lookup_key) — not in Stripe, skipping"
+                continue
+            }
+            for existing in $listed {
+                let proj_meta = ($existing | get --optional metadata.project | default "")
+                # Cross-leak guard: never touch a price tagged for another project.
+                if $proj_meta != $project.slug {
+                    print $"    ⚠ SKIP ($existing.id) — metadata.project='($proj_meta)' != '($project.slug)'"
+                    continue
+                }
+                let r = (^stripe post $"/v1/prices/($existing.id)" -d "active=false" | complete)
+                let body = (try { $r.stdout | from json } catch { {} })
+                if (($body | get --optional active) == false) {
+                    print $"    ✓ deactivated ($existing.id) [($p.lookup_key)]"
+                } else {
+                    print $"    ✗ failed to deactivate ($existing.id)"
+                }
+            }
+        }
+    }
+
+    let products_path = ([$proj_dir "products.jsonl"] | path join)
+    if ($products_path | path exists) {
+        let rows = (open --raw $products_path | lines | each {|l| $l | from json})
+        print $"  ($rows | length) products declared in project"
+        for p in $rows {
+            let retrieve = (^stripe products retrieve $p.id | complete)
+            let body = (try { $retrieve.stdout | from json } catch { {} })
+            if (($body | get --optional id) != $p.id) {
+                print $"    · ($p.id) — not in Stripe, skipping"
+                continue
+            }
+            let proj_meta = ($body | get --optional metadata.project | default "")
+            if $proj_meta != $project.slug {
+                print $"    ⚠ SKIP ($p.id) — metadata.project='($proj_meta)' != '($project.slug)'"
+                continue
+            }
+            let r = (^stripe post $"/v1/products/($p.id)" -d "active=false" | complete)
+            let upd_body = (try { $r.stdout | from json } catch { {} })
+            if (($upd_body | get --optional active) == false) {
+                print $"    ✓ archived ($p.id)"
+            } else {
+                print $"    ✗ failed to archive ($p.id)"
+            }
+        }
+    }
+
+    print ""
+    print "  Done. To restore: mise run bootstrap:products — re-activates archived items."
 }
 
 def configure_portal [] {
@@ -523,6 +624,70 @@ def print_projects [] {
         print $"      repo:        ($repo)"
         print $"      catalog:     ($n_products) products, ($n_prices) prices"
     }
+}
+
+# Thai buyer paying via PromptPay. SMP does NOT support PromptPay
+# (per stripe.com/payments/managed-payments — only cards / Apple Pay /
+# Google Pay / Link globally), so this uses Stripe Payments mode without
+# managed_payments. We are MoR; Stripe Tax can calculate Thai VAT but we
+# remit. mode=payment (PromptPay doesn't do recurring). Currency=THB
+# (PromptPay only accepts THB). Price inline so we don't have to pre-create
+# a THB price object in our catalog.
+def test_checkout_thai_promptpay [] {
+    print "creating Checkout Session for Thai buyer with PromptPay (Payments mode)..."
+    print "  — SMP cannot do PromptPay (cards / Apple Pay / Google Pay / Link only)"
+    print "  — falling back to Stripe Payments; we are MoR for this transaction"
+    print ""
+
+    let r = (^stripe post /v1/checkout/sessions
+        --stripe-version "2025-03-31.basil"
+        -d "mode=payment"
+        -d "payment_method_types[]=promptpay"
+        -d "payment_method_types[]=card"
+        -d "currency=thb"
+        -d "line_items[0][quantity]=1"
+        -d "line_items[0][price_data][currency]=thb"
+        -d "line_items[0][price_data][unit_amount]=29000"
+        -d "line_items[0][price_data][product_data][name]=Coach (Thailand demo)"
+        -d "line_items[0][price_data][product_data][description]=One-time test purchase via PromptPay"
+        -d "line_items[0][price_data][product_data][tax_code]=txcd_10103000"
+        -d "line_items[0][price_data][product_data][metadata][project]=remy-sport"
+        -d "success_url=http://localhost:8787/health?session={CHECKOUT_SESSION_ID}"
+        -d "cancel_url=http://localhost:8787/health?canceled=1"
+        -d "metadata[project]=remy-sport"
+        -d "metadata[region]=thailand"
+        -d "metadata[method]=promptpay"
+        | complete)
+
+    let body = (try { $r.stdout | from json } catch { {} })
+    let api_err = ($body | get --optional error)
+    if $api_err != null {
+        print $"✗ Stripe API error: (($api_err.message))"
+        print ""
+        print "  PromptPay may not be enabled on this Stripe account by default."
+        print "  Enable via: dashboard.stripe.com → Settings → Payment Methods → PromptPay → turn on."
+        print "  Or: mise run open:stripe-dashboard, then navigate to Payment Methods."
+        exit 1
+    }
+    let session_id = ($body | get --optional id | default "")
+    let session_url = ($body | get --optional url | default "")
+    if ($session_url | str length) == 0 {
+        print $"✗ unexpected response — no url field:"
+        print $r.stdout
+        exit 1
+    }
+    print $"  ✓ session ($session_id) — currency=THB amount=290.00 (≈ \$9 USD)"
+    print ""
+    print "Open this URL — your browser sees what a Thai buyer sees:"
+    print $"  ($session_url)"
+    print ""
+    print "Steps in the browser:"
+    print "  1. Pick the PromptPay tab (next to Card)"
+    print "  2. Stripe shows a QR code (real PromptPay flow uses a Thai bank app to scan it)"
+    print "  3. In TEST mode, click the 'Simulate successful payment' button"
+    print "     OR run: fnox exec -- stripe payment_intents list --limit 1 | jq '.data[0].id'"
+    print "     then:   fnox exec -- stripe post /v1/payment_intents/<id>/confirm"
+    print "  4. Worker logs: payment_intent.succeeded + charge.succeeded"
 }
 
 def print_launches [] {

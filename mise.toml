@@ -117,6 +117,11 @@ description = "Stripe Dashboard → Webhooks (TEST mode)"
 shell = "nu -c"
 run = "nu scripts/open.nu stripe-webhooks"
 
+[tasks."open:stripe-payment-methods"]
+description = "Stripe Dashboard → Payment Methods (enable PromptPay, Klarna, etc.)"
+shell = "nu -c"
+run = "nu scripts/open.nu stripe-payment-methods"
+
 [tasks."open:stripe-products"]
 description = "Stripe Dashboard → Products"
 shell = "nu -c"
@@ -187,6 +192,11 @@ run = "fnox exec -- nu scripts/bootstrap.nu prices"
 description = "Full Stripe-side seed: products → prices → portal → webhook"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu all"
+
+[tasks."bootstrap:teardown"]
+description = "Archive products + prices for ONE project — usage: mise run bootstrap:teardown -- <slug>"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu teardown"
 
 [tasks."bootstrap:countries"]
 description = "Show seller countries with SMP-eligible vs Stripe-Payments-only marker"
@@ -262,6 +272,11 @@ run = "fnox exec -- nu scripts/bootstrap.nu test-checkout"
 description = "Checkout Session in Stripe Payments mode (we are MoR; automatic_tax enabled)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-payments"
+
+[tasks."test:checkout-thai"]
+description = "Thai buyer via PromptPay — Payments mode only, currency THB, mode=payment"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-thai"
 
 [tasks."check-country"]
 description = "Show what modes a country supports — usage: mise run check-country -- TH"

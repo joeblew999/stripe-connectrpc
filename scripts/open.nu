@@ -22,6 +22,7 @@ def main [
         "stripe-products":        "https://dashboard.stripe.com/test/products"
         "stripe-customers":       "https://dashboard.stripe.com/test/customers"
         "stripe-dashboard":       "https://dashboard.stripe.com/test"
+        "stripe-payment-methods": "https://dashboard.stripe.com/test/settings/payment_methods"
 
         # Cloudflare — get the API token + account id
         "cf-tokens":              "https://dash.cloudflare.com/profile/api-tokens"
