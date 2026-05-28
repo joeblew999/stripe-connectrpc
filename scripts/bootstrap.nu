@@ -59,7 +59,7 @@ def seed_products [] {
     let rows = (open --raw data/products.jsonl | lines | each {|l| $l | from json})
     print $"seeding (($rows | length)) products from data/products.jsonl"
     for p in $rows {
-        let exists = (^stripe products retrieve $p.id err> (std null-device) | complete)
+        let exists = (^stripe products retrieve $p.id | complete)
         if $exists.exit_code == 0 {
             print $"  ✓ ($p.id) already exists"
             continue
@@ -224,7 +224,7 @@ def show_status [] {
 }
 
 def print_countries [] {
-    let rows = (open --raw data/countries.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/reference/countries.jsonl | lines | each {|l| $l | from json})
     let smp_count = ($rows | where {|c| "smp" in $c.seller_modes} | length)
     let pay_count = ($rows | where {|c| "payments" in $c.seller_modes} | length)
     let paystack_count = ($rows | where {|c| "paystack" in $c.seller_modes} | length)
@@ -264,7 +264,7 @@ def print_countries [] {
 # Show what modes are available for a given country code.
 def check_country [code: string] {
     let code_upper = ($code | str upcase)
-    let rows = (open --raw data/countries.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/reference/countries.jsonl | lines | each {|l| $l | from json})
     let matched = ($rows | where code == $code_upper)
     if ($matched | length) == 0 {
         print $"  ($code_upper) — not in countries.jsonl"
@@ -291,7 +291,7 @@ def check_country [code: string] {
 }
 
 def print_tax_codes [] {
-    let rows = (open --raw data/tax-codes.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/reference/tax-codes.jsonl | lines | each {|l| $l | from json})
     print $"SMP-eligible tax codes — total (($rows | length))"
     $rows
     | group-by group
@@ -303,25 +303,28 @@ def print_tax_codes [] {
 }
 
 def print_scan [] {
-    let countries = (open --raw data/countries.jsonl | lines | each {|l| $l | from json})
+    let countries = (open --raw data/reference/countries.jsonl | lines | each {|l| $l | from json})
     let smp = ($countries | where {|c| "smp" in $c.seller_modes} | length)
     let payments = ($countries | where {|c| "payments" in $c.seller_modes} | length)
     let paystack = ($countries | where {|c| "paystack" in $c.seller_modes} | length)
     let blocked = ($countries | where {|c| ($c.buyer_blocked_modes | length) > 0} | length)
-    let tax = (open --raw data/tax-codes.jsonl | lines | length)
+    let tax = (open --raw data/reference/tax-codes.jsonl | lines | length)
     let products = (open --raw data/products.jsonl | lines | length)
     let prices = (open --raw data/prices.jsonl | lines | length)
     let launches = (open --raw data/launches.jsonl | lines | length)
-    let tax_cov = (open --raw data/tax-coverage.jsonl | lines | length)
+    let tax_cov = (open --raw data/reference/tax-coverage.jsonl | lines | length)
 
     print "data/ summary"
     print "============="
-    print $"countries.jsonl    (($countries | length)) rows  — sellers: smp=($smp) payments=($payments) paystack=($paystack)  blocked-buyers=($blocked)"
-    print $"tax-codes.jsonl    ($tax) rows  — SMP-eligible Stripe product tax codes"
-    print $"tax-coverage.jsonl ($tax_cov) rows  — buyer countries where Stripe handles indirect tax under SMP"
-    print $"products.jsonl     ($products) rows  — sports SaaS tiers"
-    print $"prices.jsonl       ($prices) rows  — per product/interval/currency"
-    print $"launches.jsonl     ($launches) rows  — project × jurisdiction tracker"
+    print "reference/  (Stripe-sourced — refresh via `mise run data:check`)"
+    print $"  countries.jsonl     (($countries | length)) rows — sellers: smp=($smp) payments=($payments) paystack=($paystack)  blocked-buyers=($blocked)"
+    print $"  tax-codes.jsonl     ($tax) rows — SMP-eligible product tax codes"
+    print $"  tax-coverage.jsonl  ($tax_cov) rows — buyer countries Stripe handles tax for under SMP"
+    print ""
+    print "ours  (hand-curated)"
+    print $"  products.jsonl      ($products) rows — what we sell"
+    print $"  prices.jsonl        ($prices) rows — per product/interval/currency"
+    print $"  launches.jsonl      ($launches) rows — per project × jurisdiction × mode"
 }
 
 def print_flow [] {
@@ -367,7 +370,7 @@ def print_flow [] {
 }
 
 def print_tax_coverage [] {
-    let rows = (open --raw data/tax-coverage.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/reference/tax-coverage.jsonl | lines | each {|l| $l | from json})
     let excl = ($rows | where domestic_excluded != null | length)
     print $"SMP tax coverage — total (($rows | length)) countries"
     print $"  ($excl) have domestic-sale exclusions — Stripe does not cover intra-country tax there"
@@ -389,7 +392,7 @@ def print_tax_coverage [] {
 # Check whether a given buyer-country is covered by SMP tax (Stripe handles it).
 def check_tax_coverage [code: string] {
     let code_upper = ($code | str upcase)
-    let rows = (open --raw data/tax-coverage.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/reference/tax-coverage.jsonl | lines | each {|l| $l | from json})
     let match = ($rows | where code == $code_upper)
     if ($match | length) == 0 {
         print $"  ($code_upper) — NOT in SMP tax-coverage list"

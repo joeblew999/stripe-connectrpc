@@ -34,3 +34,4 @@ STRIPE_WEBHOOK_SECRET = { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SEC
 # Deployed Worker URL — captured by `mise run worker:deploy` for the
 # Stripe Dashboard webhook endpoint configuration.
 SMP_WORKER_URL = { provider = "keychain", value = "SMP_WORKER_URL" }
+SMP_STRIPE_WEBHOOK_SECRET= { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SECRET" }

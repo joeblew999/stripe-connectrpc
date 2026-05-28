@@ -55,9 +55,9 @@ run = "cargo clean ; rm -rf build"
 # =============================================================================
 
 [tasks."worker:dev"]
-description = "Run wrangler dev locally (env resolved via fnox)"
+description = "Run wrangler dev locally (regenerates .dev.vars from fnox keychain first)"
 shell = "nu -c"
-run = "fnox exec -- wrangler dev"
+run = "fnox exec -- nu scripts/worker-dev.nu"
 
 [tasks."worker:deploy"]
 description = "Deploy worker to Cloudflare"
