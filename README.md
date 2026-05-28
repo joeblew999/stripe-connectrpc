@@ -4,6 +4,8 @@ Stripe Managed Payments shared service on Cloudflare Workers (Rust / wasm32).
 
 Stripe is the merchant of record — see [stripe.com/managed-payments](https://stripe.com/managed-payments). smp is the only place Stripe API keys live; consumer apps call smp for both ops actions (refund, cancel, portal) and billing-state queries. The web app never embeds Stripe.js; all user-facing payment UIs are Stripe-hosted (Checkout + Customer Portal).
 
+**Status:** real sandbox payment landed end-to-end (AU-registered Stripe account, $29 SaaS subscription + $2.90 SMP-handled tax = $31.90 charged). All 12 webhook events HMAC-verified on wasm32 in the smp Worker.
+
 ## Stack
 
 - `workers-rs` 0.8 on `wasm32-unknown-unknown`.
@@ -11,79 +13,107 @@ Stripe is the merchant of record — see [stripe.com/managed-payments](https://s
   - `async-stripe-checkout` — managed Checkout Sessions (`managed_payments[enabled]=true`).
   - `async-stripe-webhook` — inbound HMAC signature verification (sync, wasm-clean).
   - `async-stripe-client-core` — request builders + API version pin (`2025-03-31.basil`).
-- `worker::Fetch` executes outbound Stripe HTTP via a small `StripeClient` adapter (forthcoming).
-- Secrets via [fnox](https://github.com/fnox-dev/fnox) → macOS keychain → mise → wrangler.
+- `worker::Fetch` will execute outbound Stripe HTTP via a small `StripeClient` adapter (forthcoming; for now bootstrap calls go through stripe-cli from your laptop).
+- Secrets via [fnox](https://github.com/fnox-dev/fnox) → macOS keychain → mise → wrangler (.dev.vars materialized from fnox at `worker:dev` startup).
 - Tasks orchestrated through `mise.toml`; scripts in `nushell` for OS neutrality.
 
 ## Onboarding (fresh clone)
 
 ```sh
-mise run mise:install   # rust, wrangler, worker-build, stripe-cli, nushell
+mise run mise:install   # rust, wrangler, worker-build, stripe-cli, nushell (versions pinned)
 mise run onboard        # interactive: collect CF + Stripe creds into keychain
 mise run verify         # confirm tools, target, keychain entries
 ```
 
-For a first-time Stripe account (incl. Thailand-specific notes), see **[docs/SETUP.md](docs/SETUP.md)**.
+For a first-time Stripe account walkthrough (account country requirement, SMP activation, API key into fnox), see **[docs/SETUP.md](docs/SETUP.md)**.
 
 ## Dev loop
 
 ```sh
 mise run cargo:check        # type-check against wasm32
-mise run worker:dev         # wrangler dev with fnox-resolved env
-
-# In another terminal:
-mise run stripe:listen      # forward Stripe webhooks to localhost:8787/v1/webhook
-mise run stripe:trigger-completed   # send a test checkout.session.completed
+mise run worker:dev         # wrangler dev — auto-regens .dev.vars from fnox keychain
 ```
 
-## Deploy
-
+Webhooks (separate terminals):
 ```sh
-mise run worker:secret-put  # push STRIPE_* secrets to wrangler
-mise run worker:deploy      # deploy
+mise run stripe:listen              # forward Stripe webhooks to localhost:8787/v1/webhook
+mise run stripe:trigger-completed   # send a synthetic checkout.session.completed
 ```
-
-## Endpoints (v0 bare minimum)
-
-- `GET  /health`     — liveness probe
-- `POST /v1/webhook` — Stripe → smp; HMAC-verified, logs the event, acks 200
-
-The ConnectRPC service (checkout / portal / refund / subscription / customer queries), D1 persistence, and CF Queues-based delivery to consumer apps land in subsequent commits.
 
 ## Stripe-side bootstrap (one-time per account)
 
-After `mise run onboard` populates the keychain:
-
 ```sh
-mise run bootstrap:account     # confirm test mode + capabilities
-mise run bootstrap:all         # products + prices + portal + webhook
-mise run bootstrap:status      # snapshot of everything just created
+mise run bootstrap:account     # confirm test mode + country + capabilities
+mise run bootstrap:all         # products + prices + portal + webhook (per project)
+mise run bootstrap:status      # snapshot of everything Stripe-side
+mise run bootstrap:projects    # list registered consumer projects
 ```
 
-All idempotent — re-run any time. Driven by `data/*.jsonl` + the official Stripe CLI.
+All idempotent — re-running tags any missing `metadata.project=<slug>` on existing objects, never duplicates state.
 
-## End-to-end sandbox payment
+## End-to-end sandbox payment (Human-in-the-loop, verified working)
 
-In three terminals (Stripe test mode):
+Three terminals (Stripe test mode):
 
 ```sh
-# Terminal 1 — local Worker
+# T1 — local Worker
 mise run worker:dev
 
-# Terminal 2 — forward Stripe webhooks → localhost:8787/v1/webhook
+# T2 — forward Stripe webhooks → localhost:8787/v1/webhook
 mise run stripe:listen
-#   ▸ prints `whsec_...` on first run.
-#   ▸ copy it once: fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_...'
+#   ▸ prints `whsec_...` on first run; capture into keychain:
+#       fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_...'
+#   ▸ restart T1 so it re-materializes .dev.vars
 
-# Terminal 3 — create a Checkout Session URL
-mise run test:checkout         # default: sports_coach_monthly_usd
-#   ▸ prints a checkout.stripe.com URL
-#   ▸ open in browser
-#   ▸ pay with test card 4242 4242 4242 4242 (any future expiry / CVC / zip)
-#   ▸ Terminal 1 logs the checkout.session.completed event from smp
+# T3 — create a real Checkout Session URL (SMP mode)
+mise run test:checkout         # default: sports_coach_monthly_usd (Remy Sport)
+#   ▸ prints checkout.stripe.com/c/pay/... URL
+#   ▸ open in browser, pay with test card 4242 4242 4242 4242
+#   ▸ T1 logs ~12 events: customer.created, customer.subscription.created,
+#     invoice.paid, payment_intent.succeeded, checkout.session.completed, …
+#     all HMAC-verified and acked 200 by smp.
+```
+
+Stripe Payments mode (we are MoR, no SMP):
+```sh
+mise run test:checkout-payments
 ```
 
 Pick a different tier:
 ```sh
 nu scripts/bootstrap.nu test-checkout sports_player_yearly_usd
 ```
+
+## Data layout
+
+```
+data/
+├── reference/                       ← Stripe-sourced; refresh via `mise run data:check`
+│   ├── countries.jsonl              # seller + buyer eligibility per country
+│   ├── tax-codes.jsonl              # SMP-eligible product tax codes
+│   └── tax-coverage.jsonl           # buyer countries where Stripe handles tax
+├── projects/                        ← one dir per consumer app
+│   └── remy-sport/                  # first consumer project
+│       ├── project.json             # {slug, name, domain, github_repo, …}
+│       ├── products.jsonl
+│       └── prices.jsonl
+└── launches.jsonl                   ← project × country × mode tracker
+```
+
+All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a second consumer app: drop a new `data/projects/<slug>/` dir, run `bootstrap:products`+`bootstrap:prices`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
+
+## Worker endpoints (v0)
+
+- `GET  /health`     — liveness probe
+- `POST /v1/webhook` — Stripe → smp; HMAC-verified, logs the event, acks 200
+
+Outbound `StripeClient` adapter, ConnectRPC consumer surface, D1 persistence, and CF Queues-based delivery to consumer apps land in subsequent commits.
+
+## Deploy (later)
+
+```sh
+mise run worker:secret-put  # push STRIPE_* secrets to wrangler
+mise run worker:deploy      # deploy to Cloudflare
+```
+
+Capture the resulting URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`. Then `mise run bootstrap:webhook` registers the Stripe webhook endpoint pointed at it. See [docs/SETUP.md § Going live](docs/SETUP.md#going-live-later).
