@@ -109,23 +109,37 @@ Pick a different tier:
 nu scripts/bootstrap.nu test-checkout sports_player_yearly_usd
 ```
 
-## Data layout
+## Repo layout
 
 ```
-data/
-├── reference/                       ← Stripe-sourced; refresh via `mise run data:check`
-│   ├── countries.jsonl              # seller + buyer eligibility per country
-│   ├── tax-codes.jsonl              # SMP-eligible product tax codes
-│   └── tax-coverage.jsonl           # buyer countries where Stripe handles tax
-├── projects/                        ← one dir per consumer app
-│   └── remy-sport/                  # first consumer project
-│       ├── project.json             # {slug, name, domain, github_repo, …}
-│       ├── products.jsonl
-│       └── prices.jsonl
-└── launches.jsonl                   ← project × country × mode tracker
+stripe-smp/
+├── Cargo.toml / Cargo.lock          # Rust crate (workers-rs + async-stripe)
+├── wrangler.toml                    # Cloudflare Worker config
+├── pitchfork.toml                   # supervised dev daemons (worker + listen)
+├── fnox.toml                        # secrets routing — keychain → env
+├── mise.toml                        # all task entry points + tool versions
+├── src/                             # Worker code (Rust)
+├── scripts/                         # nushell — bootstrap, onboard, verify, open, refresh
+└── data/
+    ├── reference/                   ← Stripe-sourced; refresh via `mise run data:check`
+    │   ├── countries.jsonl          # 60 rows — seller + buyer eligibility per country
+    │   ├── tax-codes.jsonl          # 72 rows — SMP-eligible product tax codes
+    │   ├── tax-coverage.jsonl       # 82 rows — buyer countries where Stripe handles tax
+    │   ├── payment-methods.jsonl    # 24 rows — desired account-pool methods
+    │   └── webhook-events.jsonl     #  9 rows — events smp subscribes to from Stripe
+    ├── projects/                    ← one dir per consumer app
+    │   ├── remy-sport/              # first consumer (basketball SaaS)
+    │   │   ├── project.json         # {slug, name, domain, consumer: {webhook_url, secrets, filters}}
+    │   │   ├── products.jsonl
+    │   │   └── prices.jsonl
+    │   └── demo-app/                # second consumer (proves isolation)
+    │       ├── project.json
+    │       ├── products.jsonl
+    │       └── prices.jsonl
+    └── launches.jsonl               ← project × country × mode tracker
 ```
 
-All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a second consumer app: drop a new `data/projects/<slug>/` dir, run `bootstrap:products`+`bootstrap:prices`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
+All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a third consumer: `mkdir data/projects/<slug>/`, drop the three files, run `bootstrap:products` + `bootstrap:prices`. Per-project teardown (cross-leak safe): `mise run bootstrap:teardown -- <slug>`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
 
 ## Worker endpoints (v0)
 

@@ -232,17 +232,10 @@ def register_webhook [] {
     }
 
     print $"creating Stripe webhook endpoint at ($endpoint) ..."
-    let events = [
-        "checkout.session.completed"
-        "checkout.session.async_payment_succeeded"
-        "checkout.session.async_payment_failed"
-        "customer.subscription.created"
-        "customer.subscription.updated"
-        "customer.subscription.deleted"
-        "invoice.paid"
-        "invoice.payment_failed"
-        "charge.refunded"
-    ]
+    # Event list is declarative — sourced from data/reference/webhook-events.jsonl
+    # so it can be edited without touching this script.
+    let events = (open --raw data/reference/webhook-events.jsonl | lines | each {|l| $l | from json | get event})
+    print $"  subscribing to (($events | length)) event types from reference/webhook-events.jsonl"
     let event_args = ($events | each {|e| ["-e" $e]} | flatten)
 
     let r = (^stripe webhook_endpoints create --url $endpoint ...$event_args | complete)

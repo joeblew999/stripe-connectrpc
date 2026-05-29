@@ -5,5 +5,14 @@
   "domain": "demo-app.example",
   "owner": "joeblew999",
   "github_repo": "https://github.com/joeblew999/stripe-smp",
-  "started": "2026-05-28"
+  "started": "2026-05-28",
+  "consumer": {
+    "webhook_url": "https://demo-app.example/webhooks/smp",
+    "signing_secret_keychain": "SMP_CONSUMER_DEMO_APP_SIGNING_SECRET",
+    "bearer_token_keychain": "SMP_CONSUMER_DEMO_APP_BEARER_TOKEN",
+    "event_filters": [
+      "checkout.session.completed",
+      "customer.subscription.*"
+    ]
+  }
 }

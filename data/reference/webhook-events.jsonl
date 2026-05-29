@@ -1,0 +1,9 @@
+{"event":"checkout.session.completed","why":"Primary post-payment signal — user completed Checkout. Provision the entitlement on this."}
+{"event":"checkout.session.async_payment_succeeded","why":"Delayed payment methods (e.g. ACH) confirmed after the fact."}
+{"event":"checkout.session.async_payment_failed","why":"Delayed payment method ultimately failed. Revoke or warn."}
+{"event":"customer.subscription.created","why":"New recurring subscription. Sync to consumer's user/org state."}
+{"event":"customer.subscription.updated","why":"Plan change, status transition (trialing → active → past_due → canceled)."}
+{"event":"customer.subscription.deleted","why":"Subscription canceled or expired. Revoke entitlement."}
+{"event":"invoice.paid","why":"Recurring payment cycle succeeded. Extend access for the next period."}
+{"event":"invoice.payment_failed","why":"Card declined / insufficient funds. Trigger dunning."}
+{"event":"charge.refunded","why":"Admin or customer-portal initiated refund landed."}

@@ -5,5 +5,18 @@
   "domain": "remy-sport.dev",
   "owner": "joeblew999",
   "github_repo": "https://github.com/joeblew999/remy-sport",
-  "started": "2026-05-28"
+  "started": "2026-05-28",
+  "consumer": {
+    "webhook_url": "https://remy-sport.dev/webhooks/smp",
+    "signing_secret_keychain": "SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET",
+    "bearer_token_keychain": "SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN",
+    "event_filters": [
+      "checkout.session.completed",
+      "checkout.session.async_payment_*",
+      "customer.subscription.*",
+      "invoice.paid",
+      "invoice.payment_failed",
+      "charge.refunded"
+    ]
+  }
 }

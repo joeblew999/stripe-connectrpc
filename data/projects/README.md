@@ -24,7 +24,13 @@ data/projects/
   "domain": "remy-sport.dev",
   "owner": "joeblew999",
   "github_repo": "https://github.com/joeblew999/remy-sport",
-  "started": "2026-05-28"
+  "started": "2026-05-28",
+  "consumer": {
+    "webhook_url": "https://remy-sport.dev/webhooks/smp",
+    "signing_secret_keychain": "SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET",
+    "bearer_token_keychain": "SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN",
+    "event_filters": ["checkout.session.completed", "customer.subscription.*", "invoice.paid"]
+  }
 }
 ```
 
@@ -33,10 +39,14 @@ data/projects/
 | `slug` | The Stripe metadata value: `metadata.project=<slug>` on every object |
 | `name` | Display name |
 | `description` | Plain-English what-it-is |
-| `domain` | Project's primary web domain (informational; future: smp dispatches signed webhooks to `https://<domain>/webhooks/smp`) |
+| `domain` | Project's primary web domain |
 | `owner` | GitHub username/org |
 | `github_repo` | Source repo for the consumer app |
 | `started` | ISO-8601 date the project was registered with smp |
+| `consumer.webhook_url` | Where smp POSTs signed events for this consumer (CF Queues fan-out target) |
+| `consumer.signing_secret_keychain` | fnox keychain item holding the HMAC signing secret smp uses when posting to `webhook_url` |
+| `consumer.bearer_token_keychain` | fnox keychain item holding the bearer token this consumer presents on inbound RPC calls to smp |
+| `consumer.event_filters` | Subset of `data/reference/webhook-events.jsonl` this consumer cares about. Glob patterns supported (e.g. `customer.subscription.*`) |
 
 ## How bootstrap iterates projects
 
