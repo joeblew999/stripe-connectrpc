@@ -18,7 +18,7 @@ The Carta Partnership: If you use Carta Launch to handle equity management, Stri
 
 https://carta.com/product-updates/carta-stripe-atlas-api-partnership/
 
-
+## Counties where Stripe Atlas combined with Stripe SMP still requires we have a local company ?
 
 
 

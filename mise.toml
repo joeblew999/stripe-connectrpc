@@ -2,6 +2,7 @@
 rust = "1.88"
 "aqua:nushell/nushell" = "0.112.2"
 "aqua:stripe/stripe-cli" = "1.42.0"
+"aqua:jdx/pitchfork" = "latest"
 "npm:wrangler" = "latest"
 "cargo:worker-build" = "latest"
 
@@ -58,6 +59,47 @@ run = "cargo clean ; rm -rf build"
 description = "Run wrangler dev locally (regenerates .dev.vars from fnox keychain first)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/worker-dev.nu"
+
+
+# =============================================================================
+# dev:* — process supervision via pitchfork
+# (config in pitchfork.toml — daemons: worker + listen, auto_restart=true)
+# =============================================================================
+
+[tasks."dev:up"]
+description = "Start worker + stripe-listen daemons (auto-restart on crash)"
+shell = "nu -c"
+run = "pitchfork start -l -f"
+
+[tasks."dev:down"]
+description = "Stop the worker + listen daemons"
+shell = "nu -c"
+run = "pitchfork stop worker listen"
+
+[tasks."dev:status"]
+description = "Show pitchfork daemon status"
+shell = "nu -c"
+run = "pitchfork list"
+
+[tasks."dev:logs"]
+description = "Tail logs from worker + listen"
+shell = "nu -c"
+run = "pitchfork logs worker listen"
+
+[tasks."dev:tui"]
+description = "Interactive pitchfork dashboard for the daemons"
+shell = "nu -c"
+run = "pitchfork tui"
+
+[tasks."dev:restart-worker"]
+description = "Restart just the worker daemon (after .dev.vars or src edit)"
+shell = "nu -c"
+run = "pitchfork stop worker ; pitchfork start worker"
+
+[tasks."dev:restart-listen"]
+description = "Restart just stripe-listen (after a new keychain whsec_)"
+shell = "nu -c"
+run = "pitchfork stop listen ; pitchfork start listen"
 
 [tasks."worker:deploy"]
 description = "Deploy worker to Cloudflare"
