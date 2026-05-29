@@ -1,159 +1,188 @@
 # Stripe SMP
 
-Stripe Managed Payments shared service on Cloudflare Workers (Rust / wasm32).
+Stripe Managed Payments shared service on **http-nu + xs** — nushell HTTP front-end backed by cablehead's event store. Cloudflare Workers retained as an alternative runtime under `cf:*` tasks; see [docs/ADR.md](docs/ADR.md).
 
 Stripe is the merchant of record — see [stripe.com/managed-payments](https://stripe.com/managed-payments). smp is the only place Stripe API keys live; consumer apps call smp for both ops actions (refund, cancel, portal) and billing-state queries. The web app never embeds Stripe.js; all user-facing payment UIs are Stripe-hosted (Checkout + Customer Portal).
 
-**Status:** real sandbox payment landed end-to-end (AU-registered Stripe account, $29 SaaS subscription + $2.90 SMP-handled tax = $31.90 charged). All 12 webhook events HMAC-verified on wasm32 in the smp Worker.
-
-## Stripe Atlas
-
-[Stripe Atlas](https://dashboard.stripe.com/register/atlas) — incorporate a US company (Delaware C-Corp) through Stripe.
-
-**Why this might matter for smp:** Atlas gives you a US-registered Stripe account, which is one of the 38 SMP seller countries. Combined with SMP, that account can sell globally with Stripe as MoR.
-
-**Why we don't need it today:** the currently-operating Stripe account is AU-registered, which is *also* an SMP seller country. We aren't using any payment method that requires a country-specific local company:
-
-- Card / Apple Pay / Link → global, no local company needed
-- PromptPay / iDEAL / Bancontact / Pix / etc. → would require a local seller country, but **we don't offer them**
-
-Stripe Atlas would become relevant only if we wanted to additionally accept US-specific methods (e.g. ACH Direct Debit, Cash App Pay) and didn't already have a US presence. Out of scope for now.
-
-[Carta × Stripe Atlas partnership](https://carta.com/product-updates/carta-stripe-atlas-api-partnership/) — pushes Atlas cap-table details into Carta automatically. Useful when (if) we incorporate.
-
-
+**Status:** end-to-end pipeline verified — Stripe → stripe listen → http-nu → HMAC verify in handler.nu → events appended to xs (`stripe.webhook.received` + `stripe.webhook.verified`). 7/7 events HMAC-verified on a real Stripe trigger fixture. The earlier $31.90 sandbox payment on the AU-registered account proves the bootstrap layer + Stripe integration; the same flow re-verified on the http-nu+xs runtime.
 
 ## Stack
 
-- `workers-rs` 0.8 on `wasm32-unknown-unknown`.
-- [arlyon/async-stripe](https://github.com/arlyon/async-stripe) v1.0.0-rc.5 runtime-free sub-crates:
-  - `async-stripe-checkout` — managed Checkout Sessions (`managed_payments[enabled]=true`).
-  - `async-stripe-webhook` — inbound HMAC signature verification (sync, wasm-clean).
-  - `async-stripe-client-core` — request builders + API version pin (`2025-03-31.basil`).
-- `worker::Fetch` will execute outbound Stripe HTTP via a small `StripeClient` adapter (forthcoming; for now bootstrap calls go through stripe-cli from your laptop).
-- Secrets via [fnox](https://github.com/fnox-dev/fnox) → macOS keychain → mise → wrangler (.dev.vars materialized from fnox at `worker:dev` startup).
-- Tasks orchestrated through `mise.toml`; scripts in `nushell` for OS neutrality.
+- **xs** (cablehead/cross-stream) — embedded event store, append-only stream with topic indexing.
+- **http-nu** (cablehead) — HTTP server that dispatches routes to nushell handler closures; `--store` makes it host the xs store inline.
+- **nushell** — every handler + every bootstrap script.
+- **stripe-cli** — both for HTTP API calls (apply tasks) and webhook tunnel forwarding.
+- **pitchfork** — supervises http-nu + stripe-listen as auto-restarting daemons.
+- **fnox** — macOS keychain backend for secrets; env vars in scope of every Stripe-touching command.
+- **mise** — single source of truth for tool versions + tasks.
+
+Runs entirely off your laptop or any VPS. No vendor lock-in for the runtime.
 
 ## Onboarding (fresh clone)
 
 ```sh
-mise run mise:install   # rust, wrangler, worker-build, stripe-cli, nushell (versions pinned)
-mise run onboard        # interactive: collect CF + Stripe creds into keychain
-mise run verify         # confirm tools, target, keychain entries
+mise run mise:install   # xs, http-nu, pitchfork, nushell, stripe-cli (versions pinned)
+mise run onboard        # interactive: collect Stripe creds into keychain
+mise run verify         # confirm tools + keychain entries
 ```
 
 For a first-time Stripe account walkthrough (account country requirement, SMP activation, API key into fnox), see **[docs/SETUP.md](docs/SETUP.md)**.
 
 ## Dev loop
 
-Two long-running daemons (`wrangler dev` + `stripe listen`) are supervised by [pitchfork](https://github.com/jdx/pitchfork) — config in `pitchfork.toml`. One command starts both, auto-restart on crash (DNS blips, etc.).
-
 ```sh
-mise run dev:up         # start worker + stripe listen
-mise run dev:logs       # tail both
-mise run dev:status     # which are running
-mise run dev:tui        # interactive dashboard
-mise run dev:down       # stop both
-```
+mise run dev:up           # pitchfork starts http-nu (:8787 + embedded xs) + stripe listen
+mise run dev:logs         # tail both daemons
+mise run dev:status       # which daemons are running
+mise run dev:tui          # interactive pitchfork dashboard
+mise run dev:down         # stop everything
 
-Single-daemon control:
-```sh
-mise run dev:restart-worker   # after editing src/ or .dev.vars
+mise run dev:restart-http     # after editing scripts/handler.nu
 mise run dev:restart-listen   # after rotating the webhook signing secret
 ```
 
-Other:
+Inspect the event stream:
 ```sh
-mise run cargo:check                # type-check against wasm32
+mise run xs:cat                                      # all frames
+mise run xs:last -- stripe.webhook.verified          # latest of a topic
+mise run xs:append -- some.topic 'body text'         # write a test frame
+```
+
+Stripe passthroughs:
+```sh
 mise run stripe:trigger-completed   # synthetic checkout.session.completed
+mise run stripe:login               # pair stripe-cli with your account (once)
 ```
 
-## Stripe-side bootstrap (one-time per account)
+## Verb tasks for the bootstrap layer
+
+39 mise tasks total. Stripe-side state is driven by 4 verb tasks that dispatch on a positional argument:
 
 ```sh
-mise run show:account     # confirm test mode + country + capabilities
-mise run apply:all         # products + prices + portal + webhook (per project)
-mise run show:status      # snapshot of everything Stripe-side
-mise run show:projects    # list registered consumer projects
+mise run show -- account              # Stripe account info (mode/country/capabilities)
+mise run show -- status               # snapshot: webhooks, products, prices, portal
+mise run show -- projects             # registered consumer projects
+mise run show -- countries            # 60 jurisdictions grouped by region
+mise run show -- country AU           # one country's mode availability
+mise run show -- tax-codes            # 72 SMP-eligible product tax codes
+mise run show -- tax-coverage         # 82 buyer countries Stripe handles tax for
+mise run show -- tax TH               # tax coverage for one buyer country
+mise run show -- launches             # market-entry tracker
+mise run show -- payment-methods      # what's enabled on this account (live API)
+mise run show -- scan                 # data/ summary
+mise run show -- flow                 # end-to-end flow notes
+
+mise run apply -- products            # seed products from data/projects/<slug>/products.jsonl
+mise run apply -- prices              # seed prices from data/projects/<slug>/prices.jsonl
+mise run apply -- portal              # configure Customer Portal from data/config/portal-config.jsonl
+mise run apply -- webhook             # register Stripe webhook endpoint at SMP_SERVICE_URL
+mise run apply -- payment-methods     # reconcile data/config/payment-methods.jsonl → Stripe
+mise run apply -- all                 # all five above, in order
+
+mise run teardown -- <slug>           # archive products + prices for one project (cross-leak safe)
+
+mise run test -- customer             # create a test customer
+mise run test -- checkout             # SMP-mode Checkout Session, prints URL
+mise run test -- checkout-payments    # Stripe Payments mode (we are MoR)
+mise run test -- checkout-thai        # Thai buyer (locale=th, address required)
+
+mise run data:check                   # diff data/reference/ vs upstream Stripe docs
 ```
 
-All idempotent — re-running tags any missing `metadata.project=<slug>` on existing objects, never duplicates state.
+The full task → script → data matrix lives in [docs/TASKS.md](docs/TASKS.md).
 
-## End-to-end sandbox payment (Human-in-the-loop, verified working)
-
-One supervised pair + one shell for the checkout (Stripe test mode):
+## End-to-end sandbox payment
 
 ```sh
 mise run dev:up
-#   ▸ pitchfork starts wrangler dev (:8787) + stripe listen
+#   ▸ pitchfork starts http-nu + stripe listen
 #   ▸ first run: copy printed whsec_ into the keychain:
 #       fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_...'
-#       mise run dev:restart-worker   # so .dev.vars regenerates
+#       mise run dev:restart-http   # so handler.nu picks up the new env var
 
-mise run test:checkout
+mise run test -- checkout
 #   ▸ default lookup_key: sports_coach_monthly_usd (Remy Sport)
 #   ▸ prints checkout.stripe.com/c/pay/... URL
 #   ▸ open in browser, pay with test card 4242 4242 4242 4242
-#   ▸ mise run dev:logs  → shows ~12 events:
-#     customer.created, customer.subscription.created, invoice.paid,
-#     payment_intent.succeeded, checkout.session.completed, …
-#     all HMAC-verified and acked 200 by smp.
+#   ▸ mise run xs:cat shows ~12 events as stripe.webhook.received + .verified
 ```
 
-Stripe Payments mode (we are MoR, no SMP):
+## Stripe Atlas
+
+[Stripe Atlas](https://dashboard.stripe.com/register/atlas) — incorporate a US company (Delaware C-Corp) through Stripe.
+
+**Why this might matter for smp:** Atlas gives you a US-registered Stripe account, which is one of the 38 SMP seller countries.
+
+**Why we don't need it today:** the currently-operating Stripe account is AU-registered, which is *also* an SMP seller country. We aren't using any payment method that requires a country-specific local company:
+
+- Card / Apple Pay / Link → global, no local company needed
+- PromptPay / iDEAL / Bancontact / Pix / etc. → would require a local seller country, but **we don't offer them**
+
+Stripe Atlas would become relevant only if we wanted to additionally accept US-specific methods (e.g. ACH Direct Debit, Cash App Pay) and didn't already have a US presence.
+
+[Carta × Stripe Atlas partnership](https://carta.com/product-updates/carta-stripe-atlas-api-partnership/) — pushes Atlas cap-table details into Carta automatically.
+
+## Data layout
+
+```
+data/
+├── reference/                       ← UPSTREAM Stripe docs; refresh via `data:check`
+│   ├── countries.jsonl              # 60 rows
+│   ├── tax-codes.jsonl              # 72 rows
+│   └── tax-coverage.jsonl           # 82 rows
+├── config/                          ← OUR CONFIG; applied via `apply -- *`
+│   ├── payment-methods.jsonl        # 24 rows
+│   ├── webhook-events.jsonl         # 9 rows (events smp subscribes to)
+│   ├── stripe-config.jsonl          # pinned API version
+│   └── portal-config.jsonl          # Customer Portal feature config
+├── projects/                        ← PER CONSUMER APP
+│   ├── remy-sport/                  # first consumer
+│   │   ├── project.json             # {slug, name, domain, consumer: {…}}
+│   │   ├── products.jsonl
+│   │   └── prices.jsonl
+│   └── demo-app/                    # second (proves isolation)
+└── launches.jsonl                   ← project × country × mode tracker
+```
+
+All Stripe objects created by `apply -- *` are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries filter by project. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
+
+## Event-sourced runtime
+
+The bootstrap layer above (`apply` / `show` / `teardown`) is **declarative** — JSONL → Stripe via API. The runtime is **event-sourced** — every inbound webhook, every API call result, every consumer interaction becomes an event in xs.
+
+Topics currently emitted by `scripts/handler.nu`:
+
+| Topic | When |
+|---|---|
+| `stripe.webhook.received` | Any POST to /v1/webhook (raw, pre-verify) |
+| `stripe.webhook.verified` | HMAC validated against `STRIPE_WEBHOOK_SECRET` |
+| `stripe.webhook.invalid` | Signature mismatch / missing header (response is 400) |
+
+Future topics (not yet emitted, in design):
+- `stripe.intent.*` for consumer-initiated mutations (RPC → emit intent)
+- `stripe.api.*` for handler responses from Stripe (created, archived, …)
+- `stripe.webhook.dispatched.<consumer>` for fan-out to consumer webhook URLs
+
+The architecture decision and event-substrate trade-offs are in [docs/ADR.md](docs/ADR.md) (Decision 9).
+
+## Cloudflare path (alternative runtime, retained for later)
+
+The Workers/wasm32 scaffold (`Cargo.toml`, `src/`, `wrangler.toml`, `scripts/worker-dev.nu`) is kept in the repo. `cf:*` tasks let you build and deploy that variant if you ever want smp behind Cloudflare's edge. Same data layer (`data/`), same bootstrap tooling — only the runtime changes.
+
 ```sh
-mise run test:checkout-payments
+mise run cf:cargo-check       # cargo check the Workers wasm32 build
+mise run cf:cargo-build       # worker-build --release
+mise run cf:worker-dev        # wrangler dev locally
+mise run cf:worker-deploy     # deploy to Cloudflare
+mise run cf:worker-secret-put # push STRIPE_* from fnox → wrangler secrets
 ```
 
-Pick a different tier:
-```sh
-nu scripts/bootstrap.nu test-checkout sports_player_yearly_usd
-```
+See `wrangler.toml`, `src/lib.rs`, `src/webhook.rs` for the Worker implementation.
 
-## Repo layout
+## Documentation
 
-```
-stripe-smp/
-├── Cargo.toml / Cargo.lock          # Rust crate (workers-rs + async-stripe)
-├── wrangler.toml                    # Cloudflare Worker config
-├── pitchfork.toml                   # supervised dev daemons (worker + listen)
-├── fnox.toml                        # secrets routing — keychain → env
-├── mise.toml                        # all task entry points + tool versions
-├── src/                             # Worker code (Rust)
-├── scripts/                         # nushell — bootstrap, onboard, verify, open, refresh
-└── data/
-    ├── reference/                   ← Stripe-sourced; refresh via `mise run data:check`
-    │   ├── countries.jsonl          # 60 rows — seller + buyer eligibility per country
-    │   ├── tax-codes.jsonl          # 72 rows — SMP-eligible product tax codes
-    │   ├── tax-coverage.jsonl       # 82 rows — buyer countries where Stripe handles tax
-    │   ├── payment-methods.jsonl    # 24 rows — desired account-pool methods
-    │   └── webhook-events.jsonl     #  9 rows — events smp subscribes to from Stripe
-    ├── projects/                    ← one dir per consumer app
-    │   ├── remy-sport/              # first consumer (basketball SaaS)
-    │   │   ├── project.json         # {slug, name, domain, consumer: {webhook_url, secrets, filters}}
-    │   │   ├── products.jsonl
-    │   │   └── prices.jsonl
-    │   └── demo-app/                # second consumer (proves isolation)
-    │       ├── project.json
-    │       ├── products.jsonl
-    │       └── prices.jsonl
-    └── launches.jsonl               ← project × country × mode tracker
-```
-
-All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a third consumer: `mkdir data/projects/<slug>/`, drop the three files, run `apply:products` + `apply:prices`. Per-project teardown (cross-leak safe): `mise run teardown:project -- <slug>`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
-
-## Worker endpoints (v0)
-
-- `GET  /health`     — liveness probe
-- `POST /v1/webhook` — Stripe → smp; HMAC-verified, logs the event, acks 200
-
-Outbound `StripeClient` adapter, ConnectRPC consumer surface, D1 persistence, and CF Queues-based delivery to consumer apps land in subsequent commits.
-
-## Deploy (later)
-
-```sh
-mise run worker:secret-put  # push STRIPE_* secrets to wrangler
-mise run worker:deploy      # deploy to Cloudflare
-```
-
-Capture the resulting URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`. Then `mise run apply:webhook` registers the Stripe webhook endpoint pointed at it. See [docs/SETUP.md § Going live](docs/SETUP.md#going-live-later).
+- [docs/ADR.md](docs/ADR.md) — Architecture decisions (runtime pivot, event-substrate, multi-project model, etc.)
+- [docs/SETUP.md](docs/SETUP.md) — Stripe account setup walkthrough (country eligibility, API key into fnox)
+- [docs/TASKS.md](docs/TASKS.md) — Task inventory + data-flow matrix
+- [CLAUDE.md](CLAUDE.md) — Context for Claude sessions working in this repo
+- [data/README.md](data/README.md) — Data dictionary for reference/config/projects/launches
