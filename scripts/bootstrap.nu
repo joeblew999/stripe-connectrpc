@@ -4,7 +4,8 @@
 # nushell + stripe-cli.
 #
 # All subcommands are idempotent (check-then-create).
-# Run via mise: `mise run bootstrap:<subcommand>` or `mise run test:<subcommand>`.
+# Run via mise: `mise run show:*` (read-only), `mise run apply:*` (mutate Stripe),
+# `mise run teardown:project <slug>` (cleanup), `mise run test:*` (one-off).
 # Direct: `nu scripts/bootstrap.nu <subcommand> [arg]`.
 
 def main [
