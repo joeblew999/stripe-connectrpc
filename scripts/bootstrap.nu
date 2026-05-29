@@ -232,10 +232,10 @@ def register_webhook [] {
     }
 
     print $"creating Stripe webhook endpoint at ($endpoint) ..."
-    # Event list is declarative — sourced from data/reference/webhook-events.jsonl
+    # Event list is declarative — sourced from data/config/webhook-events.jsonl
     # so it can be edited without touching this script.
-    let events = (open --raw data/reference/webhook-events.jsonl | lines | each {|l| $l | from json | get event})
-    print $"  subscribing to (($events | length)) event types from reference/webhook-events.jsonl"
+    let events = (open --raw data/config/webhook-events.jsonl | lines | each {|l| $l | from json | get event})
+    print $"  subscribing to (($events | length)) event types from config/webhook-events.jsonl"
     let event_args = ($events | each {|e| ["-e" $e]} | flatten)
 
     let r = (^stripe webhook_endpoints create --url $endpoint ...$event_args | complete)
@@ -343,10 +343,10 @@ def configure_portal [] {
         return
     }
 
-    print "configuring default Stripe Customer Portal from data/reference/portal-config.jsonl ..."
+    print "configuring default Stripe Customer Portal from data/config/portal-config.jsonl ..."
     # Declarative config: each line is one form-encoded -d arg. Edit the JSONL
     # to add/remove features; the next configure_portal run picks it up.
-    let pairs = (open --raw data/reference/portal-config.jsonl | lines | each {|l| $l | from json})
+    let pairs = (open --raw data/config/portal-config.jsonl | lines | each {|l| $l | from json})
     let args = ($pairs | each {|p| ["-d" $"($p.k)=($p.v)"]} | flatten)
     let r = (^stripe post /v1/billing_portal/configurations ...$args | complete)
     if $r.exit_code == 0 {
@@ -688,7 +688,7 @@ def test_checkout_thai_buyer [] {
     print "  6. Worker logs the full event fan-out (checkout.session.completed, etc)."
 }
 
-# Reconcile data/reference/payment-methods.jsonl → Stripe account.
+# Reconcile data/config/payment-methods.jsonl → Stripe account.
 # For each row with preference="on" or "off", set the matching value on the
 # default payment_method_configuration. Skip "unavailable" entries (those
 # are documentation — methods Stripe blocks for our merchant country).
@@ -711,8 +711,8 @@ def sync_payment_methods [] {
     let cfg_id = ($default_cfg.id)
     print $"reconciling against payment_method_configuration ($cfg_id) ..."
 
-    let want = (open --raw data/reference/payment-methods.jsonl | lines | each {|l| $l | from json})
-    print $"  ($want | length) methods declared in reference/payment-methods.jsonl"
+    let want = (open --raw data/config/payment-methods.jsonl | lines | each {|l| $l | from json})
+    print $"  ($want | length) methods declared in config/payment-methods.jsonl"
 
     for m in $want {
         if $m.preference == "unavailable" {
@@ -804,10 +804,10 @@ def test_customer [] {
     }
 }
 
-# Read a key from data/reference/stripe-config.jsonl. Each row is
+# Read a key from data/config/stripe-config.jsonl. Each row is
 # {"key": "...", "value": "...", "note": "..."}. Loaded once per call.
 def stripe_config [key: string] {
-    let rows = (open --raw data/reference/stripe-config.jsonl | lines | each {|l| $l | from json})
+    let rows = (open --raw data/config/stripe-config.jsonl | lines | each {|l| $l | from json})
     let match = ($rows | where key == $key | first)
     if ($match | is-empty) {
         print $"✗ missing stripe-config key: ($key)"
@@ -834,7 +834,7 @@ def test_checkout [lookup_key: string, mode: string] {
 
     # SMP requires Stripe API version 2025-03-31.basil or later. The account
     # default is currently older, so we pin per-request via header. Version
-    # sourced from data/reference/stripe-config.jsonl.
+    # sourced from data/config/stripe-config.jsonl.
     let api_version = (stripe_config "api_version")
     mut args = [
         "post" "/v1/checkout/sessions"

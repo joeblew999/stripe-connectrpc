@@ -46,7 +46,7 @@ data/projects/
 | `consumer.webhook_url` | Where smp POSTs signed events for this consumer (CF Queues fan-out target) |
 | `consumer.signing_secret_keychain` | fnox keychain item holding the HMAC signing secret smp uses when posting to `webhook_url` |
 | `consumer.bearer_token_keychain` | fnox keychain item holding the bearer token this consumer presents on inbound RPC calls to smp |
-| `consumer.event_filters` | Subset of `data/reference/webhook-events.jsonl` this consumer cares about. Glob patterns supported (e.g. `customer.subscription.*`) |
+| `consumer.event_filters` | Subset of `data/config/webhook-events.jsonl` this consumer cares about. Glob patterns supported (e.g. `customer.subscription.*`) |
 
 ## How bootstrap iterates projects
 

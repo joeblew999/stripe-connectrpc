@@ -1,8 +1,9 @@
 [tools]
 rust = "1.88"
+"aqua:jdx/pitchfork" = "latest"
 "aqua:nushell/nushell" = "0.112.2"
 "aqua:stripe/stripe-cli" = "1.42.0"
-"aqua:jdx/pitchfork" = "latest"
+
 "npm:wrangler" = "latest"
 "cargo:worker-build" = "latest"
 
