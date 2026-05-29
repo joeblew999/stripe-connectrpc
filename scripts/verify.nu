@@ -4,7 +4,9 @@
 mut fails = 0
 
 def check_cmd [name: string, cmd: list<string>] {
-    let r = (run-external --redirect-combine ...$cmd | complete)
+    # `complete` captures stdout + stderr + exit_code; the old
+    # --redirect-combine flag was removed in nushell 0.106+.
+    let r = (run-external ...$cmd | complete)
     if $r.exit_code == 0 {
         print $"  ✓ ($name)"
         0
