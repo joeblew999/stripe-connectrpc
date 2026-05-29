@@ -8,17 +8,18 @@ Stripe is the merchant of record — see [stripe.com/managed-payments](https://s
 
 ## Stripe Atlas
 
-Stripe Atlas 
+[Stripe Atlas](https://dashboard.stripe.com/register/atlas) — incorporate a US company (Delaware C-Corp) through Stripe.
 
-https://dashboard.stripe.com/register/atlas
+**Why this might matter for smp:** Atlas gives you a US-registered Stripe account, which is one of the 38 SMP seller countries. Combined with SMP, that account can sell globally with Stripe as MoR.
 
----
+**Why we don't need it today:** the currently-operating Stripe account is AU-registered, which is *also* an SMP seller country. We aren't using any payment method that requires a country-specific local company:
 
-The Carta Partnership: If you use Carta Launch to handle equity management, Stripe has an API partnership that automatically pushes your Atlas company details, founder shares, and cap table directly into Carta.
+- Card / Apple Pay / Link → global, no local company needed
+- PromptPay / iDEAL / Bancontact / Pix / etc. → would require a local seller country, but **we don't offer them**
 
-https://carta.com/product-updates/carta-stripe-atlas-api-partnership/
+Stripe Atlas would become relevant only if we wanted to additionally accept US-specific methods (e.g. ACH Direct Debit, Cash App Pay) and didn't already have a US presence. Out of scope for now.
 
-## Counties where Stripe Atlas combined with Stripe SMP still requires we have a local company ?
+[Carta × Stripe Atlas partnership](https://carta.com/product-updates/carta-stripe-atlas-api-partnership/) — pushes Atlas cap-table details into Carta automatically. Useful when (if) we incorporate.
 
 
 

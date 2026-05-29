@@ -1,0 +1,1 @@
+{"key":"api_version","value":"2025-03-31.basil","note":"Pinned for SMP — managed_payments[enabled] requires 2025-03-31.basil or later. Update when Stripe publishes a newer version that supersedes this."}

@@ -343,19 +343,12 @@ def configure_portal [] {
         return
     }
 
-    print "configuring default Stripe Customer Portal ..."
-    let r = (^stripe post /v1/billing_portal/configurations
-        -d "business_profile[headline]=Manage your sports subscription"
-        -d "features[subscription_cancel][enabled]=true"
-        -d "features[subscription_cancel][mode]=at_period_end"
-        -d "features[subscription_update][enabled]=true"
-        -d "features[subscription_update][default_allowed_updates][]=price"
-        -d "features[payment_method_update][enabled]=true"
-        -d "features[invoice_history][enabled]=true"
-        -d "features[customer_update][enabled]=true"
-        -d "features[customer_update][allowed_updates][]=email"
-        -d "features[customer_update][allowed_updates][]=address"
-        | complete)
+    print "configuring default Stripe Customer Portal from data/reference/portal-config.jsonl ..."
+    # Declarative config: each line is one form-encoded -d arg. Edit the JSONL
+    # to add/remove features; the next configure_portal run picks it up.
+    let pairs = (open --raw data/reference/portal-config.jsonl | lines | each {|l| $l | from json})
+    let args = ($pairs | each {|p| ["-d" $"($p.k)=($p.v)"]} | flatten)
+    let r = (^stripe post /v1/billing_portal/configurations ...$args | complete)
     if $r.exit_code == 0 {
         print "  ✓ Customer Portal configured"
     } else {
@@ -656,8 +649,9 @@ def test_checkout_thai_buyer [] {
     let price_id = ($prices | first | get id)
 
     # No payment_method_types — Stripe routes methods per buyer automatically.
+    let api_version = (stripe_config "api_version")
     let r = (^stripe post /v1/checkout/sessions
-        --stripe-version "2025-03-31.basil"
+        --stripe-version $api_version
         -d "mode=subscription"
         -d $"line_items[0][price]=($price_id)"
         -d "line_items[0][quantity]=1"
@@ -810,6 +804,18 @@ def test_customer [] {
     }
 }
 
+# Read a key from data/reference/stripe-config.jsonl. Each row is
+# {"key": "...", "value": "...", "note": "..."}. Loaded once per call.
+def stripe_config [key: string] {
+    let rows = (open --raw data/reference/stripe-config.jsonl | lines | each {|l| $l | from json})
+    let match = ($rows | where key == $key | first)
+    if ($match | is-empty) {
+        print $"✗ missing stripe-config key: ($key)"
+        exit 1
+    }
+    $match.value
+}
+
 def test_checkout [lookup_key: string, mode: string] {
     # Resolve price by lookup_key.
     let listing = (^stripe prices list --lookup-keys $lookup_key --limit 1 | complete)
@@ -827,10 +833,12 @@ def test_checkout [lookup_key: string, mode: string] {
     print $"using price ($price_id) for lookup_key ($lookup_key) — mode=($mode)"
 
     # SMP requires Stripe API version 2025-03-31.basil or later. The account
-    # default is currently 2024-10-28.acacia, so we pin per-request via header.
+    # default is currently older, so we pin per-request via header. Version
+    # sourced from data/reference/stripe-config.jsonl.
+    let api_version = (stripe_config "api_version")
     mut args = [
         "post" "/v1/checkout/sessions"
-        "--stripe-version" "2025-03-31.basil"
+        "--stripe-version" $api_version
         "-d" "mode=subscription"
         "-d" $"line_items[0][price]=($price_id)"
         "-d" "line_items[0][quantity]=1"

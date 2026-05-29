@@ -1,0 +1,10 @@
+{"k":"business_profile[headline]","v":"Manage your subscription"}
+{"k":"features[subscription_cancel][enabled]","v":"true"}
+{"k":"features[subscription_cancel][mode]","v":"at_period_end"}
+{"k":"features[subscription_update][enabled]","v":"true"}
+{"k":"features[subscription_update][default_allowed_updates][]","v":"price"}
+{"k":"features[payment_method_update][enabled]","v":"true"}
+{"k":"features[invoice_history][enabled]","v":"true"}
+{"k":"features[customer_update][enabled]","v":"true"}
+{"k":"features[customer_update][allowed_updates][]","v":"email"}
+{"k":"features[customer_update][allowed_updates][]","v":"address"}
