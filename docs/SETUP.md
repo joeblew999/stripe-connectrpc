@@ -1,138 +1,90 @@
-# Setting up smp against a real Stripe account
+# Stripe account setup
 
-One-time-per-account dance. After it, the daily loop is `mise run worker:dev` + `mise run stripe:listen` + `mise run test:checkout`.
+One-time dance. After it, `mise run dev:up` + `mise run test -- checkout` is the daily loop.
 
-A sandbox payment has been verified working end-to-end against the AU-registered account `acct_1QJrzxABkTiOs5on` (2026-05-28) — see [docs/ADR.md § Revisions](ADR.md#revisions). The steps below are the path any new contributor / fresh account follows to reach the same point.
+A real $31.90 sandbox payment + 9/9 webhook-event delivery has been verified end-to-end against AU-registered account `acct_1QJrzxABkTiOs5on`. Steps below get any fresh account to the same point.
 
-## What lands in the keychain in the end
+## Country eligibility (check FIRST)
 
-Four entries (via fnox, against the macOS keychain):
+SMP requires the Stripe account to be registered in one of **38 supported countries**. List: <https://docs.stripe.com/payments/managed-payments/eligibility#supported-business-locations>. Excluded: TH, MY, NZ, AE, BR, MX, IN, ID, and the 5 Paystack-Africa countries.
 
-| Keychain item | Used by | Source |
+```sh
+mise run show -- country AU      # what modes does <ISO> support?
+```
+
+If your operation is in a non-supported country:
+1. Register the Stripe account in a supported one (AU Pty Ltd or SG Pte Ltd is the typical cross-border setup).
+2. Or drop to regular Stripe Payments — you become MoR, you handle tax. Use `mise run test -- checkout-payments` instead of `test -- checkout`.
+
+## Required keychain entries
+
+Two for the primary runtime:
+
+| Item | Used by | Source |
 |---|---|---|
-| `SMP_STRIPE_SECRET_KEY` | Worker (`STRIPE_SECRET_KEY` binding) + stripe-cli (`STRIPE_API_KEY` alias) | Dashboard → Developers → API keys → Secret key (`sk_test_…` in dev, `sk_live_…` in prod) |
-| `SMP_STRIPE_WEBHOOK_SECRET` | Worker HMAC verify (`STRIPE_WEBHOOK_SECRET` binding) | Local: `stripe listen` prints one on first run. Deployed: Dashboard → Webhooks → endpoint → Signing secret |
-| `CLOUDFLARE_API_TOKEN` | wrangler deploy | dash.cloudflare.com → My Profile → API Tokens |
-| `CLOUDFLARE_ACCOUNT_ID` | wrangler deploy | dash.cloudflare.com → right sidebar of any account page |
+| `SMP_STRIPE_SECRET_KEY` | stripe-cli + handler.nu | Dashboard → Developers → API keys → Secret key (`sk_test_…` / `sk_live_…`) |
+| `SMP_STRIPE_WEBHOOK_SECRET` | `routes/webhook.nu` HMAC verify | Local: `mise run dev:up` prints one on first run via `stripe listen`. Deployed: Dashboard → Webhooks → endpoint → Signing secret |
 
-Optional (captured once deployed):
-| Keychain item | Used by |
+Optional (once deployed):
+
+| Item | Used by |
 |---|---|
-| `SMP_WORKER_URL` | `apply:webhook` (registers Stripe webhook endpoint pointed at it) |
+| `SMP_SERVICE_URL` | `apply -- webhook` (registers Stripe webhook at `<url>/v1/webhook`) |
+| `SMP_CONSUMER_<SLUG>_SIGNING_SECRET` | dispatcher → consumer HMAC sign — one per consumer ([CONSUMERS.md](CONSUMERS.md)) |
 
-`mise run onboard` walks you through populating these interactively, opening the right dashboard page in your browser before each prompt. `mise run verify` confirms they're all there.
+Alt-runtime (`cf:*` only):
 
-## ⚠ Check your Stripe account country FIRST
+| Item | Used by |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` | wrangler deploy |
 
-SMP only works if the Stripe account is registered in one of **38 supported countries**. The list is narrower than Stripe's general availability — see <https://docs.stripe.com/payments/managed-payments/eligibility#supported-business-locations>.
+`mise run onboard` walks you through populating these. `mise run verify` confirms.
 
-Supported (verified 2026-05-28): AT, AU, BE, BG, CA, CH, CY, CZ, DE, DK, EE, ES, FI, FR, GB, GI, GR, HK, HR, HU, IE, IT, JP, LI, LT, LU, LV, MT, NL, NO, PL, PT, RO, SE, SG, SI, SK, US.
+## Setup steps
 
-**Not** on the SMP seller list: TH, MY, NZ, AE, BR, MX, IN, ID, plus the 5 Paystack-Africa countries.
+**1. Create the Stripe account** — <https://dashboard.stripe.com/register>. Country must be on the SMP seller list. Test mode is usable immediately; no activation needed for sandbox.
 
-If your operation is in a non-supported country, you have three options:
-1. **Register the Stripe account in a supported country** (an Australian Pty Ltd or Singapore Pte Ltd is the typical cross-border setup — needs local presence / bank account there).
-2. **Drop to regular Stripe Payments instead of SMP.** You're MoR; you handle indirect tax. Stripe Tax calculates it. Use `mise run test:checkout-payments` instead of `test:checkout`.
-3. **Wait** — Stripe hasn't published an extension timeline.
+**2. Pair stripe-cli** (optional but recommended): `mise run stripe:login` — browser flow.
 
-Run `mise run show:country -- <ISO>` to see what modes any country supports.
-
-## Step 1 — Stripe account (manual, at stripe.com)
-
-The CLI cannot create the account; KYC needs to happen in the browser.
-
-1. **Sign up** at <https://dashboard.stripe.com/register>. Country must be on the SMP seller list above.
-2. **Test mode is available immediately** — no activation required to play with sandbox payments. The dashboard top-right has a TEST / LIVE toggle. Stay in TEST until everything works end-to-end.
-3. **Activate when ready for live** — Dashboard → Activate account. Country-specific requirements (business type, registration number, local bank account, tax ID).
-4. **Enable Stripe Managed Payments**. SMP requires explicit account activation — Dashboard → Settings → Managed Payments. If you don't see the toggle, request access via Stripe support. SMP works in TEST mode for development before live activation.
-5. (Optional) **Pair stripe-cli with your account**: `mise run stripe:login` — opens a browser, stores a restricted key in `~/.config/stripe/config.toml`. The stripe-cli will work even without `STRIPE_API_KEY` env var.
-
-## Step 2 — Get the API key into fnox
-
-Once your account exists:
-
-1. `mise run open:stripe-keys` — opens dashboard at the API keys page.
-2. Reveal the **Secret key** (`sk_test_…`).
-3. Drop it into the keychain. **The `-p keychain` flag is critical** — without it fnox writes the value into `fnox.toml` as plaintext:
-
-   ```sh
-   fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_test_…'
-   ```
-
-(Or run `mise run onboard` and follow the interactive prompts.)
-
-## Step 3 — Verify
-
+**3. Get the secret key into the keychain:**
 ```sh
-mise run verify                  # tools + wasm target + keychain entries present
-mise run show:account       # Stripe sees the key, account is correctly configured
+mise run open:stripe-keys                # only opens browser if key not yet in keychain
+fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_test_…'   # -p keychain is non-negotiable
 ```
 
-`show:account` should print:
-
-```
-mode:               TEST
-id:                 acct_…
-country:            <one of the 38 SMP countries>
-default_currency:   <local currency>
-charges_enabled:    true
-```
-
-If `charges_enabled: false`, finish account activation first. If the call errors with auth issue, the keychain key is wrong.
-
-## Step 4 — Seed Stripe-side state
-
+**4. Verify:**
 ```sh
-mise run apply:all
+mise run verify              # tools + keychain
+mise run show -- account     # mode=TEST, country, charges_enabled=true
 ```
 
-Runs (in order): for every project under `data/projects/<slug>/`: products → prices, each tagged `metadata.project=<slug>`. Then portal config. Then webhook endpoint (skipped if `SMP_WORKER_URL` isn't set — fine for first local test, we use `stripe listen` instead).
-
-`apply:all` is fully idempotent — re-running tags any missing metadata on existing objects, never duplicates state.
-
-Verify with stripe-cli:
+**5. Seed Stripe state:**
 ```sh
-fnox exec -- stripe products list --limit 10 | jq '.data[] | {id, name, metadata}'
+mise run apply -- all        # products + prices + portal + payment-methods (idempotent)
 ```
 
-You should see your three sports products with `metadata: {project: "remy-sport"}`.
+Webhook registration is skipped until `SMP_SERVICE_URL` is set (Phase 4 — once you deploy).
 
-## Step 5 — First sandbox payment (real card not needed — test card works)
-
-Three terminals:
-
+**6. First sandbox payment:**
 ```sh
-# T1 — local Worker
-mise run worker:dev
+mise run dev:up              # http + listen + dispatcher daemons
+# first run: copy whsec_ from `dev:logs` output into keychain:
+fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_…'
+mise run dev:restart-http    # handler picks up the new env var
 
-# T2 — tunnel Stripe → localhost:8787/v1/webhook + capture whsec
-mise run stripe:listen
-#   ▸ first line printed: "Ready! Your webhook signing secret is whsec_…"
-#   ▸ copy it ONCE:
-#       fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_…'
-#   ▸ Ctrl-C T1 and re-run `mise run worker:dev` so `.dev.vars` is regenerated
-
-# T3 — create a real Checkout Session
-mise run test:checkout
-#   ▸ prints checkout.stripe.com/c/pay/... URL
-#   ▸ open in browser
-#   ▸ pay with TEST card 4242 4242 4242 4242, any future expiry, any CVC
-#   ▸ T1 logs ~12 webhook events: customer.created, customer.subscription.created,
-#     invoice.paid, payment_intent.succeeded, checkout.session.completed, …
-#     all HMAC-verified by async-stripe-webhook on wasm32 and acked 200.
+mise run test -- checkout    # prints checkout.stripe.com URL
+# pay with 4242 4242 4242 4242, any future expiry, any CVC
 ```
 
-That's the first sandbox payment landed — see ADR Revisions for the actual numbers from 2026-05-28's run.
+`mise run xs:counts` shows the topic deltas land in xs. `mise run dispatch:delivered` shows consumer fan-out outcomes (Phase 3).
 
-## Going live (later)
+## Going live
 
-When you're ready for real cards:
+1. Activate the account (KYC, bank, tax id) — `charges_enabled: true` in live mode.
+2. Enable SMP in live mode (Dashboard → Settings → Managed Payments).
+3. Swap keychain to live: `fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_live_…'`.
+4. Deploy http-nu+xs (Phase 4 — see future deploy doc) → capture URL → `fnox set -p keychain SMP_SERVICE_URL '…'`.
+5. `mise run apply -- webhook` → captures `whsec_` → set `SMP_STRIPE_WEBHOOK_SECRET` for live.
+6. Real-card test via `mise run test -- checkout`.
 
-1. Account fully activated, `charges_enabled: true` for live mode.
-2. SMP enabled in live mode (separate toggle from test mode in the dashboard).
-3. Swap the keychain entry to live: `fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_live_…'`.
-4. Deploy: `mise run worker:deploy`. Capture the URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`.
-5. Register the live webhook: `mise run apply:webhook` — creates a Stripe webhook endpoint pointed at your deployed Worker, returns a fresh `whsec_…`. Store it: `fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_…'`. Push to wrangler: `mise run worker:secret-put`.
-6. `mise run test:checkout` against the deployed Worker — pay with a real card.
-
-The data files (`data/projects/<slug>/*.jsonl` and `data/reference/*.jsonl`) are mode-agnostic; live mode reuses everything except the keys and the deployed Worker URL.
+The data files (`data/projects/<slug>/*` and `data/reference/*`) are mode-agnostic; live mode reuses everything except keys and deployed URL.
