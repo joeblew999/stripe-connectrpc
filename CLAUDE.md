@@ -91,14 +91,23 @@ data/
 | `stripe.dispatch.delivered` | `handlers/dispatcher.nu` | Consumer 2xx ack |
 | `stripe.dispatch.failed` | `handlers/dispatcher.nu` | Consumer non-2xx, network error, or missing secret |
 
-## Required reading before changes
+## How to find anything
 
-- `docs/ADR.md` — Architecture decisions; Decision 9 = runtime pivot, Decision 10 = consumer fan-out model.
-- `docs/SETUP.md` — Stripe account setup with country-eligibility caveats.
-- `docs/TASKS.md` — Task inventory + data-flow matrix.
-- `docs/CONSUMERS.md` — Phase 3 consumer integration contract (HMAC verify code, event_filters semantics).
-- `data/projects/README.md` — per-project layout schema.
-- `data/README.md` — reference / config / projects / launches data dictionary.
+The system is CLI-discoverable — prefer running commands over reading docs:
+
+| Question | Command |
+|---|---|
+| What tasks exist? | `mise tasks` |
+| How do I set up + run end-to-end? | `mise run show -- flow` |
+| What data files are there, and what's in them? | `mise run show -- scan` |
+| What projects are registered? | `mise run show -- projects` |
+| What's the live Stripe state? | `mise run show -- account` / `show -- status` |
+| Does my install work? | `mise run verify` / `verify:all` |
+
+The only docs that don't self-document via CLI:
+
+- `docs/ADR.md` — architecture decisions (rationale not derivable from code). Decision 9 = runtime pivot, 10 = fan-out, 11 = `/v1/checkout`.
+- `docs/CONSUMERS.md` — integration contract for *other* repos. They can't introspect smp's CLI.
 
 ## Status
 
