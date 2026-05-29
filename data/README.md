@@ -45,6 +45,27 @@ SMP-eligible **product** tax codes (`txcd_…`) grouped by category. Products in
 
 Source: <https://docs.stripe.com/payments/managed-payments/eligibility#eligible-tax-codes>.
 
+### reference/payment-methods.jsonl — 24 rows
+
+Declarative pool of Stripe payment methods we want on the account. Each row:
+
+```jsonl
+{"method":"card","preference":"on","note":"…"}
+{"method":"alipay","preference":"off","note":"Chinese travelers — turn on if needed"}
+{"method":"promptpay","preference":"unavailable","note":"Requires Thai-registered seller"}
+```
+
+`preference` values:
+- `on` / `off` — apply via `mise run bootstrap:sync-payment-methods`
+- `unavailable` — documentation only; Stripe blocks this method for our merchant country, so the reconciler skips it
+
+**Per-country routing is automatic** — Checkout Sessions created without explicit `payment_method_types` let Stripe pick from this pool based on buyer location + currency + buyer device. We don't recreate the routing logic locally.
+
+To enable a new method (e.g. add `klarna`):
+1. Set `preference: "on"` in the JSONL (if currently off)
+2. Run `mise run bootstrap:sync-payment-methods`
+3. The script tries to flip it; if Stripe says "not overridable" (managed by a parent config), the message points to the dashboard page that controls it.
+
 ### reference/tax-coverage.jsonl — 82 rows
 
 **Buyer** countries where Stripe handles indirect tax (VAT/GST/sales tax) under SMP — Stripe calculates, collects, files, remits.

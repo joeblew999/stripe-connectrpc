@@ -1,0 +1,24 @@
+{"method":"card","preference":"on","note":"Visa/Mastercard/Amex/etc — global"}
+{"method":"apple_pay","preference":"on","note":"Apple devices, globally"}
+{"method":"link","preference":"on","note":"Stripe Link — global one-click"}
+{"method":"google_pay","preference":"on","note":"Android devices — may be Stripe-managed and not overridable on some accounts"}
+{"method":"klarna","preference":"off","note":"BNPL — turn on for EU / AU / NZ / US / UK buyers"}
+{"method":"afterpay_clearpay","preference":"off","note":"BNPL — AU / NZ / US / UK / CA buyers"}
+{"method":"alipay","preference":"off","note":"Chinese travelers — turn on if buyers from CN are common"}
+{"method":"wechat_pay","preference":"off","note":"Chinese wallet — same audience as Alipay"}
+{"method":"zip","preference":"off","note":"BNPL — AU / NZ / US"}
+{"method":"au_becs_debit","preference":"off","note":"Australian bank-debit — only useful if seller is AU"}
+{"method":"bacs_debit","preference":"off","note":"UK direct debit"}
+{"method":"sepa_debit","preference":"off","note":"EU IBAN direct debit"}
+{"method":"customer_balance","preference":"off","note":"Bank transfer via Stripe-managed customer balance"}
+{"method":"promptpay","preference":"unavailable","note":"Thai PromptPay — REQUIRES Thai-registered seller; AU/etc cannot enable"}
+{"method":"bancontact","preference":"unavailable","note":"Belgian; requires BE seller"}
+{"method":"ideal","preference":"unavailable","note":"Dutch; requires NL seller"}
+{"method":"giropay","preference":"unavailable","note":"German; requires DE seller"}
+{"method":"sofort","preference":"unavailable","note":"German/Austrian; requires DE/AT seller (deprecated, migrate to Klarna)"}
+{"method":"p24","preference":"unavailable","note":"Polish; requires PL seller"}
+{"method":"blik","preference":"unavailable","note":"Polish; requires PL seller"}
+{"method":"pix","preference":"unavailable","note":"Brazilian; requires BR seller"}
+{"method":"oxxo","preference":"unavailable","note":"Mexican; requires MX seller"}
+{"method":"upi","preference":"unavailable","note":"Indian; requires IN seller"}
+{"method":"payto","preference":"unavailable","note":"Australian NPP; requires AU seller (yes ours is AU but Stripe may not have enabled it)"}

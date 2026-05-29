@@ -274,9 +274,19 @@ shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-payments"
 
 [tasks."test:checkout-thai"]
-description = "Thai buyer via PromptPay — Payments mode only, currency THB, mode=payment"
+description = "Thai buyer on AU SMP account — locale=th, address required, 7% Thai VAT applied"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-thai"
+
+[tasks."bootstrap:payment-methods"]
+description = "List Stripe payment methods enabled on this account (live query)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu payment-methods"
+
+[tasks."bootstrap:sync-payment-methods"]
+description = "Reconcile data/reference/payment-methods.jsonl → Stripe account (turn methods on/off)"
+shell = "nu -c"
+run = "fnox exec -- nu scripts/bootstrap.nu sync-payment-methods"
 
 [tasks."check-country"]
 description = "Show what modes a country supports — usage: mise run check-country -- TH"

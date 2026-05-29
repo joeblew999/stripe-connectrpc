@@ -1,10 +1,26 @@
-# smp
+# Stripe SMP
 
 Stripe Managed Payments shared service on Cloudflare Workers (Rust / wasm32).
 
 Stripe is the merchant of record — see [stripe.com/managed-payments](https://stripe.com/managed-payments). smp is the only place Stripe API keys live; consumer apps call smp for both ops actions (refund, cancel, portal) and billing-state queries. The web app never embeds Stripe.js; all user-facing payment UIs are Stripe-hosted (Checkout + Customer Portal).
 
 **Status:** real sandbox payment landed end-to-end (AU-registered Stripe account, $29 SaaS subscription + $2.90 SMP-handled tax = $31.90 charged). All 12 webhook events HMAC-verified on wasm32 in the smp Worker.
+
+## Stripe Atlas
+
+Stripe Atlas 
+
+https://dashboard.stripe.com/register/atlas
+
+---
+
+The Carta Partnership: If you use Carta Launch to handle equity management, Stripe has an API partnership that automatically pushes your Atlas company details, founder shares, and cap table directly into Carta.
+
+https://carta.com/product-updates/carta-stripe-atlas-api-partnership/
+
+
+
+
 
 ## Stack
 

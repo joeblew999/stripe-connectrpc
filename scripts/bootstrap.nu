@@ -41,7 +41,9 @@ def main [
         "test-customer"          => { test_customer }
         "test-checkout"          => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
         "test-checkout-payments" => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
-        "test-checkout-thai"     => { test_checkout_thai_promptpay }
+        "test-checkout-thai"     => { test_checkout_thai_buyer }
+        "payment-methods"        => { list_payment_methods }
+        "sync-payment-methods"   => { sync_payment_methods }
         "check-country"          => { check_country ($arg | default "TH") }
         "check-tax"              => { check_tax_coverage ($arg | default "TH") }
 
@@ -56,7 +58,8 @@ def main [
             print "test:   test-customer"
             print "        test-checkout          [lookup_key]   (SMP mode)"
             print "        test-checkout-payments [lookup_key]   (Stripe Payments — we are MoR)"
-            print "        test-checkout-thai                    (Thai buyer via PromptPay — Payments mode only)"
+            print "        test-checkout-thai                    (Thai buyer; SMP w/ locale=th + address required)"
+            print "info:   payment-methods                       (what Stripe payment methods are enabled on this account)"
             exit 1
         }
     }
@@ -626,68 +629,153 @@ def print_projects [] {
     }
 }
 
-# Thai buyer paying via PromptPay. SMP does NOT support PromptPay
-# (per stripe.com/payments/managed-payments — only cards / Apple Pay /
-# Google Pay / Link globally), so this uses Stripe Payments mode without
-# managed_payments. We are MoR; Stripe Tax can calculate Thai VAT but we
-# remit. mode=payment (PromptPay doesn't do recurring). Currency=THB
-# (PromptPay only accepts THB). Price inline so we don't have to pre-create
-# a THB price object in our catalog.
-def test_checkout_thai_promptpay [] {
-    print "creating Checkout Session for Thai buyer with PromptPay (Payments mode)..."
-    print "  — SMP cannot do PromptPay (cards / Apple Pay / Google Pay / Link only)"
-    print "  — falling back to Stripe Payments; we are MoR for this transaction"
+# Thai buyer on the AU-registered SMP account.
+#
+# The reality, verified via the Payment Method Configurations API on this
+# account: PromptPay is NOT available to an AU-registered merchant — it is
+# Thailand-merchant-only. The AU account's enabled methods for any buyer
+# (Thai or otherwise) are: card, Apple Pay, Link.
+#
+# So this task simulates exactly what a Thai buyer sees: the same SMP
+# Checkout Session you'd give any global buyer, with:
+#   - locale=th             (page rendered in Thai)
+#   - billing_address_collection=required  (forces the address form so the
+#     buyer can pick Thailand as their country — SMP then applies 7% Thai
+#     VAT under merchant-of-record)
+#
+# To accept PromptPay, the seller account would need to be Thailand-
+# registered — which means LOSING SMP (TH isn't on SMP's seller list), so
+# the operation drops to Stripe Payments mode where we become MoR.
+def test_checkout_thai_buyer [] {
+    print "creating Checkout Session for a THAI BUYER on the AU-registered SMP account..."
+    print "  — PromptPay isn't available to AU merchants (Thailand-merchant-only method)"
+    print "  — Thai buyer's experience: card / Apple Pay / Link, page in Thai"
+    print "  — SMP handles Thai 7% VAT automatically once buyer enters TH address"
     print ""
 
+    # Resolve the same price the SMP HIL used.
+    let listing = (^stripe prices list --lookup-keys sports_coach_monthly_usd --limit 1 | complete)
+    let prices = (try { $listing.stdout | from json | get data } catch { [] })
+    if ($prices | length) == 0 {
+        print "✗ no price for sports_coach_monthly_usd — run mise run bootstrap:prices"
+        exit 1
+    }
+    let price_id = ($prices | first | get id)
+
+    # No payment_method_types — Stripe routes methods per buyer automatically.
     let r = (^stripe post /v1/checkout/sessions
         --stripe-version "2025-03-31.basil"
-        -d "mode=payment"
-        -d "payment_method_types[]=promptpay"
-        -d "payment_method_types[]=card"
-        -d "currency=thb"
+        -d "mode=subscription"
+        -d $"line_items[0][price]=($price_id)"
         -d "line_items[0][quantity]=1"
-        -d "line_items[0][price_data][currency]=thb"
-        -d "line_items[0][price_data][unit_amount]=29000"
-        -d "line_items[0][price_data][product_data][name]=Coach (Thailand demo)"
-        -d "line_items[0][price_data][product_data][description]=One-time test purchase via PromptPay"
-        -d "line_items[0][price_data][product_data][tax_code]=txcd_10103000"
-        -d "line_items[0][price_data][product_data][metadata][project]=remy-sport"
+        -d "managed_payments[enabled]=true"
+        -d "locale=th"
+        -d "billing_address_collection=required"
         -d "success_url=http://localhost:8787/health?session={CHECKOUT_SESSION_ID}"
         -d "cancel_url=http://localhost:8787/health?canceled=1"
         -d "metadata[project]=remy-sport"
-        -d "metadata[region]=thailand"
-        -d "metadata[method]=promptpay"
+        -d "metadata[buyer_region]=thailand"
+        -d "metadata[scenario]=thai-buyer-au-merchant"
         | complete)
 
     let body = (try { $r.stdout | from json } catch { {} })
     let api_err = ($body | get --optional error)
     if $api_err != null {
         print $"✗ Stripe API error: (($api_err.message))"
-        print ""
-        print "  PromptPay may not be enabled on this Stripe account by default."
-        print "  Enable via: dashboard.stripe.com → Settings → Payment Methods → PromptPay → turn on."
-        print "  Or: mise run open:stripe-dashboard, then navigate to Payment Methods."
         exit 1
     }
     let session_id = ($body | get --optional id | default "")
     let session_url = ($body | get --optional url | default "")
-    if ($session_url | str length) == 0 {
-        print $"✗ unexpected response — no url field:"
-        print $r.stdout
-        exit 1
-    }
-    print $"  ✓ session ($session_id) — currency=THB amount=290.00 (≈ \$9 USD)"
+    print $"  ✓ session ($session_id)"
     print ""
-    print "Open this URL — your browser sees what a Thai buyer sees:"
+    print "Open this URL in your browser — page renders in Thai:"
     print $"  ($session_url)"
     print ""
-    print "Steps in the browser:"
-    print "  1. Pick the PromptPay tab (next to Card)"
-    print "  2. Stripe shows a QR code (real PromptPay flow uses a Thai bank app to scan it)"
-    print "  3. In TEST mode, click the 'Simulate successful payment' button"
-    print "     OR run: fnox exec -- stripe payment_intents list --limit 1 | jq '.data[0].id'"
-    print "     then:   fnox exec -- stripe post /v1/payment_intents/<id>/confirm"
-    print "  4. Worker logs: payment_intent.succeeded + charge.succeeded"
+    print "Steps:"
+    print "  1. The Checkout page is in Thai (locale=th)."
+    print "  2. Available payment methods: Card / Apple Pay / Link"
+    print "     (PromptPay is not offered — AU merchant cannot accept it.)"
+    print "  3. In the address form, choose Country = Thailand."
+    print "  4. Pay with test card 4242 4242 4242 4242."
+    print "  5. SMP applies 7% Thai VAT — invoice shows base + tax breakdown."
+    print "  6. Worker logs the full event fan-out (checkout.session.completed, etc)."
+}
+
+# Reconcile data/reference/payment-methods.jsonl → Stripe account.
+# For each row with preference="on" or "off", set the matching value on the
+# default payment_method_configuration. Skip "unavailable" entries (those
+# are documentation — methods Stripe blocks for our merchant country).
+#
+# Stripe routes methods per buyer automatically when checkout sessions use
+# automatic_payment_methods=true. This sync just controls the pool — which
+# methods CAN appear at all. Per-country surfacing is Stripe's job.
+def sync_payment_methods [] {
+    let configs = (^stripe get /v1/payment_method_configurations | complete)
+    let body = (try { $configs.stdout | from json | get data } catch { [] })
+    let default_cfg = ($body | where {|c| ($c | get --optional is_default) == true and ($c | get --optional parent) != null} | first)
+    if ($default_cfg | is-empty) {
+        # Fall back to any default config without parent.
+        let alt = ($body | where {|c| ($c | get --optional is_default) == true} | first)
+        if ($alt | is-empty) {
+            print "✗ no default payment_method_configuration on this account"
+            exit 1
+        }
+    }
+    let cfg_id = ($default_cfg.id)
+    print $"reconciling against payment_method_configuration ($cfg_id) ..."
+
+    let want = (open --raw data/reference/payment-methods.jsonl | lines | each {|l| $l | from json})
+    print $"  ($want | length) methods declared in reference/payment-methods.jsonl"
+
+    for m in $want {
+        if $m.preference == "unavailable" {
+            print $"  · ($m.method) — skipped, documented as not available to this merchant"
+            continue
+        }
+        let r = (^stripe post $"/v1/payment_method_configurations/($cfg_id)"
+            -d $"($m.method)[display_preference][preference]=($m.preference)"
+            | complete)
+        let resp = (try { $r.stdout | from json } catch { {} })
+        let err = ($resp | get --optional error)
+        if $err != null {
+            let msg = ($err | get --optional message | default "")
+            print $"  · ($m.method) — skipped: ($msg)"
+            continue
+        }
+        let new_pref = ($resp | get $m.method | get --optional display_preference.value | default "?")
+        print $"  ✓ ($m.method) → ($new_pref)"
+    }
+
+    print ""
+    print "Checkout Sessions created without payment_method_types will auto-select"
+    print "from this pool per buyer location and currency — Stripe owns the routing."
+}
+
+# Print the enabled-method snapshot from the live payment_method_configuration
+# (queries Stripe directly, not a local file — this IS the source of truth).
+def list_payment_methods [] {
+    let configs = (^stripe get /v1/payment_method_configurations | complete)
+    let body = (try { $configs.stdout | from json | get data } catch { [] })
+    let default_cfg = ($body | where {|c| ($c | get --optional is_default) == true} | first)
+    if ($default_cfg | is-empty) {
+        print "✗ no default payment_method_configuration found"
+        return
+    }
+    print $"default config: ($default_cfg.id)"
+    print "enabled methods (preference=on):"
+    let entries = ($default_cfg | columns | each {|k|
+        let v = ($default_cfg | get $k)
+        if ($v | describe | str starts-with "record") {
+            let pref = ($v | get --optional display_preference.value | default "")
+            let avail = ($v | get --optional available)
+            if $pref == "on" {
+                {method: $k, available: $avail}
+            } else { null }
+        } else { null }
+    } | compact)
+    for e in $entries {
+        print $"  ✓ ($e.method) — available=($e.available)"
+    }
 }
 
 def print_launches [] {
@@ -756,14 +844,20 @@ def test_checkout [lookup_key: string, mode: string] {
         "-d" "success_url=http://localhost:8787/health?session={CHECKOUT_SESSION_ID}"
         "-d" "cancel_url=http://localhost:8787/health?canceled=1"
     ]
+    # Don't pass `payment_method_types=[…]` at all. When omitted, Stripe
+    # auto-selects from the account's configured payment-method pool based
+    # on the buyer's currency, location, and the merchant country. This is
+    # the canonical way to get per-country routing — Stripe's own engine.
+    # `automatic_payment_methods` is a PaymentIntent param, not a Checkout
+    # Session one, so we don't pass it here.
     if $mode == "smp" {
         $args = ($args | append ["-d" "managed_payments[enabled]=true"])
-        print "creating Checkout Session with managed_payments.enabled=true ..."
+        print "creating Checkout Session — SMP mode; Stripe auto-selects payment methods per buyer ..."
     } else {
         # Plain Stripe Payments mode — we are MoR. Enable Stripe Tax so taxes
         # are calculated; we remain responsible for remittance.
         $args = ($args | append ["-d" "automatic_tax[enabled]=true"])
-        print "creating Checkout Session (Stripe Payments mode, automatic_tax enabled) ..."
+        print "creating Checkout Session — Stripe Payments mode (we are MoR); automatic_tax on ..."
     }
 
     let r = (^stripe ...$args | complete)
