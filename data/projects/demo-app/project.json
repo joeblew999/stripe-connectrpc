@@ -4,6 +4,6 @@
   "description": "Second consumer project — exists solely to prove project isolation in Stripe (no cross-leak between this and remy-sport).",
   "domain": "demo-app.example",
   "owner": "joeblew999",
-  "github_repo": "https://github.com/joeblew999/smp",
+  "github_repo": "https://github.com/joeblew999/stripe-smp",
   "started": "2026-05-28"
 }

@@ -6,7 +6,7 @@ rust-version = "1.88"
 authors = ["Joe Blew <gedw99@gmail.com>"]
 description = "Stripe Managed Payments shared service on Cloudflare Workers (Rust/wasm32)"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/joeblew999/smp"
+repository = "https://github.com/joeblew999/stripe-smp"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
