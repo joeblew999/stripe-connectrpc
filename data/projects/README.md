@@ -50,7 +50,7 @@ data/projects/
 
 ## How bootstrap iterates projects
 
-`scripts/bootstrap.nu` (subcommands `products`, `prices`) loops over every `data/projects/*/` directory, reads its `project.json`, then seeds its catalog with `metadata.project=<slug>` on every create. Existing Stripe objects get **backfilled** with the metadata if missing — re-running `bootstrap:products` is always safe.
+`scripts/bootstrap.nu` (subcommands `products`, `prices`) loops over every `data/projects/*/` directory, reads its `project.json`, then seeds its catalog with `metadata.project=<slug>` on every create. Existing Stripe objects get **backfilled** with the metadata if missing — re-running `apply:products` is always safe.
 
 ## Cross-checking which project owns a Stripe object
 
@@ -67,6 +67,6 @@ fnox exec -- stripe products retrieve sports_coach | jq '.metadata'
 
 1. `mkdir data/projects/<new-slug>` + write `project.json`
 2. Create `products.jsonl` and `prices.jsonl` (same schema as the existing remy-sport ones)
-3. `mise run bootstrap:products && mise run bootstrap:prices`
+3. `mise run apply:products && mise run apply:prices`
 
 That's it. New project lives alongside, all its Stripe objects tagged with its slug.

@@ -59,7 +59,7 @@ For `wrangler dev`: secrets must be in `.dev.vars` (wrangler dev doesn't read en
 
 Each consumer app is a project. One directory per project under `data/projects/<slug>/` with its own `project.json`, `products.jsonl`, `prices.jsonl`. Every Stripe object created on a project's behalf carries `metadata.project=<slug>` so the Stripe Dashboard / API queries can filter cleanly. One Stripe account hosts everything — **no Stripe Connect** (which is for marketplaces with separate merchant entities, not internal project namespacing).
 
-Why: a single Stripe account with metadata namespacing is the simplest scheme that scales to many internal projects without onboarding each as a Stripe Connect sub-account. Adding a second project is `mkdir data/projects/<slug> && bootstrap:all` — no new accounts, no new secrets.
+Why: a single Stripe account with metadata namespacing is the simplest scheme that scales to many internal projects without onboarding each as a Stripe Connect sub-account. Adding a second project is `mkdir data/projects/<slug> && apply:all` — no new accounts, no new secrets.
 
 ## Country & tax-code eligibility (verified 2026-05-28)
 
@@ -71,7 +71,7 @@ SMP eligibility is **strictly narrower** than general Stripe availability — ve
 - **SMP tax coverage** (where Stripe handles VAT/GST for buyers): 82 countries — `data/reference/tax-coverage.jsonl`. Two carve-outs: JP (all domestic), SG (B2B domestic).
 - **Other product constraints**: direct integrations only (no Connect platforms / Express accounts), fully automated digital products (no live human-in-loop coaching).
 
-Implication: an SMP rollout is gated on the Stripe account being registered in one of the 38 supported countries. If the operation is based in a non-supported country, the choice is (a) incorporate a Stripe account elsewhere, (b) drop to regular Stripe Payments (we become MoR, we handle tax), or (c) wait for Stripe to extend SMP. `mise run bootstrap:account` reports the account country; `mise run check-country -- <ISO>` shows what modes work for any country.
+Implication: an SMP rollout is gated on the Stripe account being registered in one of the 38 supported countries. If the operation is based in a non-supported country, the choice is (a) incorporate a Stripe account elsewhere, (b) drop to regular Stripe Payments (we become MoR, we handle tax), or (c) wait for Stripe to extend SMP. `mise run show:account` reports the account country; `mise run show:country -- <ISO>` shows what modes work for any country.
 
 ## Revisions
 

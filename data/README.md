@@ -66,7 +66,7 @@ Source: <https://docs.stripe.com/payments/managed-payments/tax-compliance>.
 
 ## `config/` — our config, hand-curated
 
-What we want Stripe to do on our behalf. Hand-edited, applied via `mise run bootstrap:*` tasks. **Never** touched by `data:check`.
+What we want Stripe to do on our behalf. Hand-edited, applied via `mise run apply:*` tasks. **Never** touched by `data:check`.
 
 ### config/payment-methods.jsonl — 24 rows
 
@@ -78,19 +78,19 @@ Declarative pool of Stripe payment methods we want on the account.
 {"method":"promptpay","preference":"unavailable","note":"Requires Thai-registered seller"}
 ```
 
-`preference`: `on` / `off` applied via `mise run bootstrap:sync-payment-methods`; `unavailable` is documentation-only (Stripe blocks the method for our merchant country).
+`preference`: `on` / `off` applied via `mise run apply:payment-methods`; `unavailable` is documentation-only (Stripe blocks the method for our merchant country).
 
 Per-country routing is automatic — Checkout Sessions without `payment_method_types` let Stripe pick from this pool based on buyer location + currency. We don't recreate routing logic locally.
 
 ### config/webhook-events.jsonl — 9 rows
 
-Stripe events smp subscribes to. Read by `bootstrap:webhook` when registering the endpoint.
+Stripe events smp subscribes to. Read by `apply:webhook` when registering the endpoint.
 
 ```jsonl
 {"event":"checkout.session.completed","why":"Primary post-payment signal …"}
 ```
 
-Add a row → run `mise run bootstrap:webhook` → endpoint is recreated with the expanded event list.
+Add a row → run `mise run apply:webhook` → endpoint is recreated with the expanded event list.
 
 ### config/stripe-config.jsonl — 1 row
 
@@ -105,7 +105,7 @@ Customer Portal config: one row per form-encoded `-d` arg passed to `POST /v1/bi
 {"k":"features[customer_update][allowed_updates][]","v":"email"}
 ```
 
-Edit JSONL → `mise run bootstrap:portal` recreates the config. Idempotent.
+Edit JSONL → `mise run apply:portal` recreates the config. Idempotent.
 
 ## `projects/` — one dir per consumer app
 
@@ -138,15 +138,15 @@ Per `(project, country, mode)` market-entry tracker.
 ## Cheat sheet
 
 ```sh
-mise run data:scan                # row counts across all four groups
+mise run show:scan                # row counts across all four groups
 mise run data:check               # diff reference/ against upstream Stripe docs
 
-mise run bootstrap:projects       # registered consumer projects + catalog sizes
-mise run bootstrap:countries      # countries grouped by region with mode markers
-mise run bootstrap:tax-codes      # tax codes grouped by category
-mise run bootstrap:tax-coverage   # buyer-side tax-handled countries
-mise run bootstrap:launches       # market-entry tracker
+mise run show:projects       # registered consumer projects + catalog sizes
+mise run show:countries      # countries grouped by region with mode markers
+mise run show:tax-codes      # tax codes grouped by category
+mise run show:tax-coverage   # buyer-side tax-handled countries
+mise run show:launches       # market-entry tracker
 
-mise run check-country -- AU      # what modes does country X support as seller?
-mise run check-tax -- TH          # is country Y tax-covered as a buyer?
+mise run show:country -- AU      # what modes does country X support as seller?
+mise run show:tax -- TH          # is country Y tax-covered as a buyer?
 ```

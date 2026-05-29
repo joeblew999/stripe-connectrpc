@@ -201,72 +201,72 @@ run = "fnox exec -- stripe trigger checkout.session.completed"
 # All wrapped in `fnox exec --` so STRIPE_API_KEY is in scope for stripe-cli.
 # =============================================================================
 
-[tasks."bootstrap:account"]
+[tasks."show:account"]
 description = "Show Stripe account info — mode, country, currency, capabilities"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu account"
 
-[tasks."bootstrap:status"]
+[tasks."show:status"]
 description = "Snapshot — webhook endpoints, products, prices, portal configs"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu status"
 
-[tasks."bootstrap:webhook"]
+[tasks."apply:webhook"]
 description = "Create Stripe webhook endpoint pointing at deployed Worker (uses SMP_WORKER_URL)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu webhook"
 
-[tasks."bootstrap:portal"]
+[tasks."apply:portal"]
 description = "Configure default Customer Portal (cancel / update / invoice history)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu portal"
 
-[tasks."bootstrap:products"]
+[tasks."apply:products"]
 description = "Seed Stripe Products from data/products.jsonl (idempotent)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu products"
 
-[tasks."bootstrap:prices"]
+[tasks."apply:prices"]
 description = "Seed Stripe Prices from data/prices.jsonl (idempotent)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu prices"
 
-[tasks."bootstrap:all"]
+[tasks."apply:all"]
 description = "Full Stripe-side seed: products → prices → portal → webhook"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu all"
 
-[tasks."bootstrap:teardown"]
-description = "Archive products + prices for ONE project — usage: mise run bootstrap:teardown -- <slug>"
+[tasks."teardown:project"]
+description = "Archive products + prices for ONE project — usage: mise run teardown:project -- <slug>"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu teardown"
 
-[tasks."bootstrap:countries"]
+[tasks."show:countries"]
 description = "Show seller countries with SMP-eligible vs Stripe-Payments-only marker"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu countries"
 
-[tasks."bootstrap:tax-codes"]
+[tasks."show:tax-codes"]
 description = "Show SMP-eligible product tax codes grouped by category (72 codes)"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu tax-codes"
 
-[tasks."bootstrap:tax-coverage"]
+[tasks."show:tax-coverage"]
 description = "Show buyer countries where Stripe handles indirect tax under SMP (82 countries)"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu tax-coverage"
 
-[tasks."check-tax"]
-description = "Check if a buyer country is tax-covered by SMP — usage: mise run check-tax -- TH"
+[tasks."show:tax"]
+description = "Check if a buyer country is tax-covered by SMP — usage: mise run show:tax -- TH"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu check-tax"
 
-[tasks."bootstrap:launches"]
+[tasks."show:launches"]
 description = "Show tracked project × jurisdiction launches with stage"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu launches"
 
-[tasks."bootstrap:projects"]
+[tasks."show:projects"]
 description = "List registered consumer projects under data/projects/"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu projects"
@@ -286,12 +286,12 @@ description = "Apply upstream changes to data/*.jsonl (currently stub — see da
 shell = "nu -c"
 run = "nu scripts/data-refresh.nu apply"
 
-[tasks."data:scan"]
+[tasks."show:scan"]
 description = "Summary view of all data/ files"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu scan"
 
-[tasks."flow"]
+[tasks."show:flow"]
 description = "Print the end-to-end smp flow (supported-country Stripe account)"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu flow"
@@ -321,17 +321,17 @@ description = "Thai buyer on AU SMP account — locale=th, address required, 7% 
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-thai"
 
-[tasks."bootstrap:payment-methods"]
+[tasks."show:payment-methods"]
 description = "List Stripe payment methods enabled on this account (live query)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu payment-methods"
 
-[tasks."bootstrap:sync-payment-methods"]
+[tasks."apply:payment-methods"]
 description = "Reconcile data/reference/payment-methods.jsonl → Stripe account (turn methods on/off)"
 shell = "nu -c"
 run = "fnox exec -- nu scripts/bootstrap.nu sync-payment-methods"
 
-[tasks."check-country"]
-description = "Show what modes a country supports — usage: mise run check-country -- TH"
+[tasks."show:country"]
+description = "Show what modes a country supports — usage: mise run show:country -- TH"
 shell = "nu -c"
 run = "nu scripts/bootstrap.nu check-country"

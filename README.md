@@ -71,10 +71,10 @@ mise run stripe:trigger-completed   # synthetic checkout.session.completed
 ## Stripe-side bootstrap (one-time per account)
 
 ```sh
-mise run bootstrap:account     # confirm test mode + country + capabilities
-mise run bootstrap:all         # products + prices + portal + webhook (per project)
-mise run bootstrap:status      # snapshot of everything Stripe-side
-mise run bootstrap:projects    # list registered consumer projects
+mise run show:account     # confirm test mode + country + capabilities
+mise run apply:all         # products + prices + portal + webhook (per project)
+mise run show:status      # snapshot of everything Stripe-side
+mise run show:projects    # list registered consumer projects
 ```
 
 All idempotent — re-running tags any missing `metadata.project=<slug>` on existing objects, never duplicates state.
@@ -140,7 +140,7 @@ stripe-smp/
     └── launches.jsonl               ← project × country × mode tracker
 ```
 
-All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a third consumer: `mkdir data/projects/<slug>/`, drop the three files, run `bootstrap:products` + `bootstrap:prices`. Per-project teardown (cross-leak safe): `mise run bootstrap:teardown -- <slug>`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
+All Stripe objects created by bootstrap are tagged `metadata.project=<slug>` so the Stripe Dashboard / queries can filter by project. Adding a third consumer: `mkdir data/projects/<slug>/`, drop the three files, run `apply:products` + `apply:prices`. Per-project teardown (cross-leak safe): `mise run teardown:project -- <slug>`. See [data/projects/README.md](data/projects/README.md) and [data/README.md](data/README.md).
 
 ## Worker endpoints (v0)
 
@@ -156,4 +156,4 @@ mise run worker:secret-put  # push STRIPE_* secrets to wrangler
 mise run worker:deploy      # deploy to Cloudflare
 ```
 
-Capture the resulting URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`. Then `mise run bootstrap:webhook` registers the Stripe webhook endpoint pointed at it. See [docs/SETUP.md § Going live](docs/SETUP.md#going-live-later).
+Capture the resulting URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`. Then `mise run apply:webhook` registers the Stripe webhook endpoint pointed at it. See [docs/SETUP.md § Going live](docs/SETUP.md#going-live-later).

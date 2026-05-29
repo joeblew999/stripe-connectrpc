@@ -18,7 +18,7 @@ Four entries (via fnox, against the macOS keychain):
 Optional (captured once deployed):
 | Keychain item | Used by |
 |---|---|
-| `SMP_WORKER_URL` | `bootstrap:webhook` (registers Stripe webhook endpoint pointed at it) |
+| `SMP_WORKER_URL` | `apply:webhook` (registers Stripe webhook endpoint pointed at it) |
 
 `mise run onboard` walks you through populating these interactively, opening the right dashboard page in your browser before each prompt. `mise run verify` confirms they're all there.
 
@@ -35,7 +35,7 @@ If your operation is in a non-supported country, you have three options:
 2. **Drop to regular Stripe Payments instead of SMP.** You're MoR; you handle indirect tax. Stripe Tax calculates it. Use `mise run test:checkout-payments` instead of `test:checkout`.
 3. **Wait** — Stripe hasn't published an extension timeline.
 
-Run `mise run check-country -- <ISO>` to see what modes any country supports.
+Run `mise run show:country -- <ISO>` to see what modes any country supports.
 
 ## Step 1 — Stripe account (manual, at stripe.com)
 
@@ -65,10 +65,10 @@ Once your account exists:
 
 ```sh
 mise run verify                  # tools + wasm target + keychain entries present
-mise run bootstrap:account       # Stripe sees the key, account is correctly configured
+mise run show:account       # Stripe sees the key, account is correctly configured
 ```
 
-`bootstrap:account` should print:
+`show:account` should print:
 
 ```
 mode:               TEST
@@ -83,12 +83,12 @@ If `charges_enabled: false`, finish account activation first. If the call errors
 ## Step 4 — Seed Stripe-side state
 
 ```sh
-mise run bootstrap:all
+mise run apply:all
 ```
 
 Runs (in order): for every project under `data/projects/<slug>/`: products → prices, each tagged `metadata.project=<slug>`. Then portal config. Then webhook endpoint (skipped if `SMP_WORKER_URL` isn't set — fine for first local test, we use `stripe listen` instead).
 
-`bootstrap:all` is fully idempotent — re-running tags any missing metadata on existing objects, never duplicates state.
+`apply:all` is fully idempotent — re-running tags any missing metadata on existing objects, never duplicates state.
 
 Verify with stripe-cli:
 ```sh
@@ -132,7 +132,7 @@ When you're ready for real cards:
 2. SMP enabled in live mode (separate toggle from test mode in the dashboard).
 3. Swap the keychain entry to live: `fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_live_…'`.
 4. Deploy: `mise run worker:deploy`. Capture the URL: `fnox set -p keychain SMP_WORKER_URL 'https://smp.<sub>.workers.dev'`.
-5. Register the live webhook: `mise run bootstrap:webhook` — creates a Stripe webhook endpoint pointed at your deployed Worker, returns a fresh `whsec_…`. Store it: `fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_…'`. Push to wrangler: `mise run worker:secret-put`.
+5. Register the live webhook: `mise run apply:webhook` — creates a Stripe webhook endpoint pointed at your deployed Worker, returns a fresh `whsec_…`. Store it: `fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_…'`. Push to wrangler: `mise run worker:secret-put`.
 6. `mise run test:checkout` against the deployed Worker — pay with a real card.
 
 The data files (`data/projects/<slug>/*.jsonl` and `data/reference/*.jsonl`) are mode-agnostic; live mode reuses everything except the keys and the deployed Worker URL.

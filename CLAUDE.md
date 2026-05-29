@@ -15,7 +15,7 @@ Context for Claude (and humans) working in this repo.
 
 ## Conventions
 
-- **mise tasks are the entry points** — `mise run dev:up` / `bootstrap:all` / `test:checkout` / etc. Avoid running raw `stripe`, `wrangler`, `cargo` outside `mise x --` or `fnox exec --` (mise shim activation breaks otherwise).
+- **mise tasks are the entry points** — `mise run dev:up` / `apply:all` / `test:checkout` / etc. Avoid running raw `stripe`, `wrangler`, `cargo` outside `mise x --` or `fnox exec --` (mise shim activation breaks otherwise).
 - **Data is declarative JSONL** under `data/`:
   - `data/reference/*.jsonl` — Stripe-sourced, refresh via `mise run data:check`, never hand-edit.
   - `data/projects/<slug>/` — one dir per consumer app; `project.json` + `products.jsonl` + `prices.jsonl`.

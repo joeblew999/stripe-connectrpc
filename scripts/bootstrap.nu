@@ -329,7 +329,7 @@ def teardown_project [slug: string] {
     }
 
     print ""
-    print "  Done. To restore: mise run bootstrap:products — re-activates archived items."
+    print "  Done. To restore: mise run apply:products — re-activates archived items."
 }
 
 def configure_portal [] {
@@ -366,7 +366,7 @@ def show_account [] {
     let r = (^stripe accounts retrieve | complete)
     if $r.exit_code != 0 {
         print "✗ stripe accounts retrieve failed — is STRIPE_API_KEY set in env?"
-        print "  Wrap commands in `fnox exec --` or `mise run bootstrap:account`."
+        print "  Wrap commands in `fnox exec --` or `mise run show:account`."
         exit 1
     }
     let acct = ($r.stdout | from json)
@@ -517,7 +517,7 @@ def print_flow [] {
     print "======================================================"
     print ""
     print "Prereq: Stripe account is registered in one of the 38 SMP seller countries."
-    print "        Run `mise run bootstrap:countries` to check the list."
+    print "        Run `mise run show:countries` to check the list."
     print ""
     print "1. Fresh-clone bootstrap"
     print "   mise run mise:install     # rust 1.88 + wrangler + worker-build + nu + stripe-cli"
@@ -525,13 +525,13 @@ def print_flow [] {
     print "   mise run verify           # tools + wasm32 target + keychain entries"
     print ""
     print "2. Confirm Stripe account"
-    print "   mise run bootstrap:account"
+    print "   mise run show:account"
     print "     ▸ expect: mode=TEST, country=<supported>, charges_enabled=true"
     print ""
     print "3. Seed Stripe-side state (idempotent — safe to re-run)"
-    print "   mise run bootstrap:all"
+    print "   mise run apply:all"
     print "     ▸ products (3) + prices (6) + portal (1) + webhook (skipped until deployed)"
-    print "   mise run bootstrap:status"
+    print "   mise run show:status"
     print "     ▸ snapshot of what landed"
     print ""
     print "4. Sandbox payment loop — three terminals"
@@ -550,7 +550,7 @@ def print_flow [] {
     print "   - Enable Managed Payments in Dashboard → Settings → Payments → Managed Payments"
     print "   - Swap keychain to live: fnox set -p keychain SMP_STRIPE_SECRET_KEY 'sk_live_…'"
     print "   - mise run worker:deploy  → capture URL → fnox set SMP_WORKER_URL '…'"
-    print "   - mise run bootstrap:webhook  → capture whsec_ → mise run worker:secret-put"
+    print "   - mise run apply:webhook  → capture whsec_ → mise run worker:secret-put"
     print "   - mise run test:checkout against the deployed worker; real card"
 }
 
@@ -643,7 +643,7 @@ def test_checkout_thai_buyer [] {
     let listing = (^stripe prices list --lookup-keys sports_coach_monthly_usd --limit 1 | complete)
     let prices = (try { $listing.stdout | from json | get data } catch { [] })
     if ($prices | length) == 0 {
-        print "✗ no price for sports_coach_monthly_usd — run mise run bootstrap:prices"
+        print "✗ no price for sports_coach_monthly_usd — run mise run apply:prices"
         exit 1
     }
     let price_id = ($prices | first | get id)
@@ -826,7 +826,7 @@ def test_checkout [lookup_key: string, mode: string] {
     let prices = ($listing.stdout | from json | get data)
     if ($prices | length) == 0 {
         print $"✗ no price found for lookup_key=($lookup_key)"
-        print "  Run: mise run bootstrap:prices"
+        print "  Run: mise run apply:prices"
         exit 1
     }
     let price_id = ($prices | first | get id)

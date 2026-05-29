@@ -67,4 +67,4 @@ ensure_secret "SMP_STRIPE_WEBHOOK_SECRET" \
     ""
 
 print "\nDone."
-print "Next: mise run verify  → mise run bootstrap:account"
+print "Next: mise run verify  → mise run show:account"
