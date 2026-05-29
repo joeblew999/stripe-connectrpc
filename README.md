@@ -10,11 +10,12 @@ Runtime: **http-nu + xs** (cablehead's stack). Cloudflare Workers retained as al
 |---|---|---|
 | **1** | Bootstrap — JSONL → Stripe via stripe-cli (`show / apply / test / teardown`) | ✓ done |
 | **2** | Runtime — http-nu + xs + `/v1/webhook` HMAC verify | ✓ done |
-| **3** | Consumer fan-out — dispatcher tails xs, signs+POSTs to consumer webhooks ([ADR-10](docs/ADR.md), [CONSUMERS.md](docs/CONSUMERS.md)) | ✓ live |
+| **3a** | Consumer fan-out — dispatcher tails xs, signs+POSTs to consumer webhooks ([ADR-10](docs/ADR.md)) | ✓ live |
+| **3b** | Consumer-RPC — `POST /v1/checkout` bearer-auth; smp creates the Checkout Session ([ADR-11](docs/ADR.md)) | ✓ live |
 | **4** | Deploy to a VPS (pitchfork supervising the 3 daemons) | TBD |
-| **5** | First consumer (`remy-sport`) implements HMAC verify | TBD |
+| **5** | First consumer (`remy-sport`) wires up bearer + HMAC verify | TBD |
 
-End-to-end verified: real $31.90 sandbox payment + 9/9 trigger events HMAC-verified → xs → dispatcher → consumer 200. `mise run verify:all` = 44 PASS / 0 FAIL / 16 SKIP.
+End-to-end verified: real $31.90 sandbox payment + 9/9 trigger events HMAC-verified → xs → dispatcher → consumer 200. `POST /v1/checkout` returns a Stripe Checkout URL on 201; 401 on missing/wrong bearer. `mise run verify:all` = 44 PASS / 0 FAIL / 16 SKIP.
 
 ## Stack (mise installs all of it)
 
@@ -49,8 +50,8 @@ CLI inspection (no browser, no playwright):
 mise run xs:cat                                      # whole event stream
 mise run xs:last -- stripe.webhook.verified          # latest of a topic
 mise run xs:counts                                   # frame counts per topic
-mise run dispatch:delivered                          # successful consumer POSTs
-mise run dispatch:failed                             # bounces (status + error meta)
+mise run rpc:intent / rpc:created / rpc:failed       # /v1/checkout consumer-RPC audit
+mise run dispatch:delivered / dispatch:failed        # outbound fan-out to consumers
 ```
 
 ## Bootstrap verbs
@@ -59,7 +60,7 @@ mise run dispatch:failed                             # bounces (status + error m
 mise run show -- <what> [arg]       # account|status|projects|countries|country|tax-codes|tax|launches|payment-methods|scan|flow
 mise run apply -- <what>            # products|prices|portal|webhook|payment-methods|all  (all are idempotent)
 mise run teardown -- <slug>         # archive a project's products+prices (cross-leak safe)
-mise run test -- <flow> [arg]       # customer|checkout|checkout-payments|checkout-thai
+mise run test -- <flow> [arg]       # customer|checkout|checkout-payments|checkout-thai|rpc-checkout
 ```
 
 Full task → script → data matrix in **[docs/TASKS.md](docs/TASKS.md)**.

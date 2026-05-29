@@ -130,6 +130,22 @@ description = "Recent stripe.dispatch.failed frames"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.failed&limit=20" | jq -c ".[] | {id, meta}"'
 
 # =============================================================================
+# rpc:* — Consumer-RPC inspection (POST /v1/checkout audit trail)
+# =============================================================================
+
+[tasks."rpc:intent"]
+description = "Recent stripe.intent.session.create frames (authenticated consumer requests)"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.intent.session.create&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."rpc:created"]
+description = "Recent stripe.api.session.created frames (Stripe returned a checkout URL)"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.api.session.created&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."rpc:failed"]
+description = "Recent stripe.api.session.failed frames"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.api.session.failed&limit=20" | jq -c ".[] | {id, meta}"'
+
+# =============================================================================
 # stripe:* — Stripe CLI passthroughs
 # =============================================================================
 
@@ -212,7 +228,7 @@ run = 'fnox exec -- nu scripts/bootstrap.nu apply ${usage_what}'
 [tasks.test]
 description = "Sandbox HIL flows — usage: mise run test -- <flow> [arg]"
 usage = '''
-arg "<flow>" help="customer | checkout | checkout-payments | checkout-thai"
+arg "<flow>" help="customer | checkout | checkout-payments | checkout-thai | rpc-checkout"
 arg "[arg]" help="optional lookup_key for checkout flows" default=""
 '''
 run = 'fnox exec -- nu scripts/bootstrap.nu test ${usage_flow} "${usage_arg}"'

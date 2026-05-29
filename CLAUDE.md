@@ -35,8 +35,8 @@ scripts/
 ├── routes/
 │   ├── health.nu             ← GET /health
 │   ├── events.nu             ← GET /events, GET /events/last
-│   ├── webhook.nu            ← POST /v1/webhook + HMAC verify
-│   └── checkout.nu           ← POST /v1/checkout (Phase 3+: consumer RPC)
+│   ├── webhook.nu            ← POST /v1/webhook + HMAC verify (Stripe → smp)
+│   └── checkout.nu           ← POST /v1/checkout + Bearer auth (consumer → smp)
 ├── handlers/
 │   └── dispatcher.nu         ← Phase 3 xs subscriber → consumer webhook fan-out
 ├── open.nu                   ← idempotent browser launcher
@@ -81,6 +81,9 @@ data/
 
 | Topic | Emitted by | Notes |
 |---|---|---|
+| `stripe.intent.session.create` | `routes/checkout.nu` | Authenticated `POST /v1/checkout` audit (consumer-RPC inbound) |
+| `stripe.api.session.created` | `routes/checkout.nu` | Stripe returned a checkout URL |
+| `stripe.api.session.failed` | `routes/checkout.nu` | Stripe rejected the session create |
 | `stripe.webhook.received` | `routes/webhook.nu` | Raw POST from Stripe (pre-verify) |
 | `stripe.webhook.verified` | `routes/webhook.nu` | HMAC validated; dispatcher subscribes here |
 | `stripe.webhook.invalid` | `routes/webhook.nu` | Signature mismatch; HTTP 400 response |
@@ -99,4 +102,4 @@ data/
 
 ## Status
 
-Phase 1 (bootstrap) + Phase 2 (runtime) + Phase 3 (dispatcher) all live locally. Dispatcher tails xs, signs+POSTs to per-project consumer webhooks, and records `stripe.dispatch.*` events. Real prior $31.90 sandbox payment landed end-to-end through the bootstrap + Stripe integration. Next milestones: Phase 4 deploy target (VPS or cf:*), Phase 5 first consumer (`remy-sport`) verifying signatures and processing events.
+Phase 1 (bootstrap) + Phase 2 (runtime) + Phase 3a (dispatcher) + Phase 3b (`/v1/checkout` consumer-RPC) all live locally. The architectural loop is now closed in both directions: consumers POST to `/v1/checkout` to create Stripe Checkout Sessions (Decision 11), and the dispatcher fans verified Stripe webhooks back to per-project consumer URLs (Decision 10). Real prior $31.90 sandbox payment landed end-to-end. Next milestones: Phase 4 deploy target (VPS or `cf:*`), Phase 5 first consumer (`remy-sport`) wires up bearer + HMAC verify.

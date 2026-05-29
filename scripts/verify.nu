@@ -119,6 +119,7 @@ def verify_all [] {
         {name: "test",      args: ["checkout"]}
         {name: "test",      args: ["checkout-payments"]}
         {name: "test",      args: ["checkout-thai"]}
+        {name: "test",      args: ["rpc-checkout"]}
 
         # xs
         {name: "xs:cat"}
@@ -127,10 +128,15 @@ def verify_all [] {
         {name: "xs:counts"}
         {name: "xs:append", args: ["test.verify", "{\"ok\":true}"]}
 
-        # dispatch (Phase 3)
+        # dispatch (Phase 3a — outbound to consumers)
         {name: "dispatch:attempted"}
         {name: "dispatch:delivered"}
         {name: "dispatch:failed"}
+
+        # rpc (Phase 3b — inbound /v1/checkout)
+        {name: "rpc:intent"}
+        {name: "rpc:created"}
+        {name: "rpc:failed"}
 
         # dev daemons
         {name: "dev:status"}

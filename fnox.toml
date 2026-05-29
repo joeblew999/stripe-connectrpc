@@ -40,3 +40,4 @@ CLOUDFLARE_ACCOUNT_ID = { provider = "keychain", value = "CLOUDFLARE_ACCOUNT_ID"
 SMP_WORKER_URL        = { provider = "keychain", value = "SMP_WORKER_URL" }
 SMP_STRIPE_SECRET_KEY= { provider = "keychain", value = "SMP_STRIPE_SECRET_KEY" }
 SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET= { provider = "keychain", value = "SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET" }
+SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN= { provider = "keychain", value = "SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN" }

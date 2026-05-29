@@ -70,9 +70,10 @@ def main [
                 "checkout"           => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
                 "checkout-payments"  => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
                 "checkout-thai"      => { test_checkout_thai_buyer }
+                "rpc-checkout"       => { ^nu scripts/test-rpc-checkout.nu ($arg | default "sports_coach_monthly_usd") }
                 _ => {
                     print $"test: unknown subcommand '($s)'"
-                    print "  test:  customer | checkout [lookup_key] | checkout-payments [lookup_key] | checkout-thai"
+                    print "  test:  customer | checkout [lookup_key] | checkout-payments [lookup_key] | checkout-thai | rpc-checkout [lookup_key]"
                     exit 1
                 }
             }

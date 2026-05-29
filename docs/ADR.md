@@ -78,8 +78,9 @@ stripe.webhook.invalid         HMAC failed
 stripe.dispatch.attempted      about to POST to consumer  ┐
 stripe.dispatch.delivered      consumer 2xx                ├─ Decision 10
 stripe.dispatch.failed         consumer non-2xx / error   ┘
-stripe.intent.<resource>.<verb>   consumer-initiated (planned, /v1/checkout)
-stripe.api.<resource>.<verb>      Stripe response (planned)
+stripe.intent.session.create   authenticated POST /v1/checkout (audit)  ┐
+stripe.api.session.created     Stripe returned a URL                     ├─ /v1/checkout
+stripe.api.session.failed      Stripe rejected the session create       ┘
 ```
 
 HMAC verify: `routes/webhook.nu` shells to `openssl dgst -sha256 -hmac <secret>` (nushell has no native HMAC; openssl is everywhere). Signed-payload format is Stripe's standard: `timestamp.body`, hex-hmac-sha256, compared to `v1=…`.
@@ -106,10 +107,35 @@ HMAC verify: `routes/webhook.nu` shells to `openssl dgst -sha256 -hmac <secret>`
 - Concurrent dispatch fan-out per project (today: serial).
 - `event_filters` granularity (today: exact + trailing `*`).
 
+## Decision 11 — `POST /v1/checkout` consumer-RPC + bearer auth — 2026-05-29
+
+**Status:** ACCEPTED. Implemented in `scripts/routes/checkout.nu`. Closes the loop opened by Decision 10 — consumers now both RECEIVE events from smp (Decision 10) AND CALL INTO smp to initiate them.
+
+**Auth:** `Authorization: Bearer <token>`. The expected token is resolved at request time via `fnox get <project.consumer.bearer_token_keychain>`. Per-consumer; rotates by setting a new keychain value and restarting the http daemon. Constant-time-ish hex compare to prevent timing attacks.
+
+**Why bearer not HMAC for the inbound side:**
+- Symmetric simplicity: outbound is HMAC (matches Stripe's pattern); inbound is bearer (matches every Stripe API call the consumer would otherwise make directly).
+- Bearer + TLS is what Stripe themselves use for inbound auth — consumers don't need a separate signing scheme just for talking to smp.
+- HMAC verify on every consumer request would be ~20 lines of consumer code for ~no security improvement over `Authorization: Bearer` over TLS.
+
+**Why `lookup_key` not `price_id`:**
+- Consumers shouldn't know Stripe price IDs. `lookup_key` is the catalog identifier that survives price replacement (Stripe lets you reassign `lookup_key` to a new price).
+- smp resolves it via `stripe prices list --lookup-keys` at request time. One extra Stripe call; trivial latency.
+
+**Audit guarantee:** every authenticated request appends `stripe.intent.session.create` to xs BEFORE the Stripe call. Even if Stripe rejects, the intent is logged. The Stripe response (success or failure) appends `stripe.api.session.created` or `.failed`. Replay-friendly.
+
+**What this commits us to:**
+- Every consumer flow that creates Stripe state goes through smp — consumers never call Stripe directly. Mirrors the rule for outbound (smp is the only place sk_ keys live).
+- Bearer token rotation is a `fnox set` + `dev:restart-http`. No downstream coordination.
+
+**What this rules out:**
+- Public, unauthenticated routes for creating Stripe state. If a future use-case needs unauth (e.g. a public donation page), it gets its own dedicated route with its own per-route auth model.
+
 ## Revisions
 
+- **2026-05-29** — Decision 11 added + ACCEPTED. `/v1/checkout` live; full consumer-RPC loop verified (happy path 201 + two 401 auth-wall probes pass).
 - **2026-05-29** — Decision 10 added + ACCEPTED. Dispatcher live; full chain verified end-to-end with real Stripe trigger → consumer 200.
-- **2026-05-29** — Repo restructure: scripts split into `scripts/{bootstrap,routes,handlers}/`; CF scaffold moved to `alt-runtime/cloudflare/`; ~45 mise tasks via verb dispatch.
+- **2026-05-29** — Repo restructure: scripts split into `scripts/{bootstrap,routes,handlers}/`; CF scaffold moved to `alt-runtime/cloudflare/`; ~50 mise tasks via verb dispatch.
 - **2026-05-29** — Decision 9 added; runtime pivoted to http-nu + xs; Cloudflare retained as alt-runtime.
 - **2026-05-28** — Decision 8 added (multi-project metadata namespacing).
 - **2026-05-28** — Real $31.90 sandbox payment on AU-registered `acct_1QJrzxABkTiOs5on` end-to-end; 12 webhook events HMAC-verified.

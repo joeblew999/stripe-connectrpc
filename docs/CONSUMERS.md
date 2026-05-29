@@ -1,8 +1,12 @@
 # Consumer integration contract
 
-How a consumer repo (e.g. `remy-sport`) receives webhook events from stripe-smp. Public API surface for Phase 3 ([ADR-10](ADR.md)).
+How a consumer repo (e.g. `remy-sport`) talks to stripe-smp in **both directions**. Public API surface for Phase 3 ([ADR-10](ADR.md)).
 
-stripe-smp signs each event with HMAC-SHA256 and POSTs to your webhook URL. You verify the signature, return 2xx. Same primitive Stripe uses with smp itself — if you've implemented Stripe webhook verification before, this is the same code with a different secret.
+Two routes:
+- **`POST /v1/checkout`** — consumer asks smp to create a Stripe Checkout Session. Bearer auth. Returns a hosted checkout URL the consumer redirects the user to.
+- **`POST <consumer.webhook_url>`** — smp signs+POSTs Stripe events to the consumer. HMAC-SHA256 verification using a per-consumer shared secret. Same wire format Stripe uses with smp itself.
+
+If you've implemented Stripe webhook verification before, the inbound side is the same code with a different secret. The outbound side (calling smp) is plain JSON + bearer token.
 
 ## 1. Register your consumer
 
@@ -25,19 +29,100 @@ Add a `consumer` block to `data/projects/<your-slug>/project.json`:
 ```
 
 - `event_filters` is an OR list; trailing `*` is a wildcard. Empty = all events.
-- `bearer_token_keychain` is reserved for the future `/v1/checkout` consumer-RPC route.
 - Per `feedback-fnox-cross-repo-contract`: **the keychain item name IS the cross-repo API**. Renaming it on either side without coordination breaks verification silently.
 
-## 2. Generate and share the signing secret
+## 2. Generate + share the two secrets
 
-On the smp host:
+The consumer needs two per-consumer secrets — both random hex from `openssl rand -hex 32`:
 
 ```sh
-secret=$(openssl rand -hex 32)
-fnox set -p keychain SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET "$secret"
-mise run dev:restart-dispatcher           # picks up new keychain entry
-echo "$secret"                            # share via your normal secret channel
+# Signing secret (smp HMAC-signs outbound events to your webhook_url with this)
+fnox set -p keychain SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET "$(openssl rand -hex 32)"
+
+# Bearer token (consumer presents this on inbound POST /v1/checkout)
+fnox set -p keychain SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN  "$(openssl rand -hex 32)"
+
+mise run dev:restart-http         # picks up new bearer token for /v1/checkout
+mise run dev:restart-dispatcher   # picks up new signing secret for outbound
+
+# Share both with the consumer via your normal secret-distribution channel.
 ```
+
+---
+
+# Inbound: `POST /v1/checkout`
+
+The consumer calls this when a user clicks "Subscribe". smp creates the Stripe Checkout Session and returns the URL.
+
+## Request
+
+```
+POST /v1/checkout
+Authorization: Bearer <consumer-bearer-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "project":        "remy-sport",
+  "lookup_key":     "sports_coach_monthly_usd",
+  "success_url":    "https://app.remy-sport.dev/return?session={CHECKOUT_SESSION_ID}",
+  "cancel_url":     "https://app.remy-sport.dev/canceled",
+  "customer_email": "user@example.com",
+  "metadata":       { "user_id": "u123" }
+}
+```
+
+`customer_email` + `metadata` are optional. `metadata` is passed through to Stripe (smp always also sets `metadata.project=<slug>` so the resulting webhook dispatches back to the right consumer).
+
+## Response
+
+**`201 Created`** on success:
+
+```json
+{
+  "session_id": "cs_test_a1k3g1...",
+  "url":        "https://checkout.stripe.com/c/pay/cs_test_a1k3g1..."
+}
+```
+
+Redirect the user's browser to `url`. They pay on Stripe's domain; smp's `/v1/webhook` receives the result; the dispatcher POSTs it back to your `webhook_url`.
+
+Error responses:
+
+| Status | When |
+|---|---|
+| `400` | Missing required field, invalid JSON |
+| `401` | Missing / malformed / wrong bearer token |
+| `404` | Project slug unknown, or no Stripe price for `lookup_key` |
+| `502` | Stripe API rejected the session create |
+| `503` | smp config error (per-consumer bearer secret not in smp's keychain) |
+
+## TypeScript client example
+
+```ts
+const res = await fetch("https://smp.example.com/v1/checkout", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${SMP_CONSUMER_BEARER_TOKEN}`,
+    "Content-Type":  "application/json",
+  },
+  body: JSON.stringify({
+    project:     "remy-sport",
+    lookup_key:  "sports_coach_monthly_usd",
+    success_url: `${origin}/return?session={CHECKOUT_SESSION_ID}`,
+    cancel_url:  `${origin}/canceled`,
+    metadata:    { user_id: userId },
+  }),
+});
+if (res.status !== 201) throw new Error(`smp checkout: ${res.status}`);
+const { url } = await res.json();
+return Response.redirect(url, 303);
+```
+
+---
+
+# Outbound: webhook signature verify
 
 ## 3. Verify the signature
 
@@ -113,18 +198,30 @@ The dispatcher times out at 10 seconds. Keep handlers fast or ack-then-process �
 On the smp host:
 
 ```sh
+# Inbound: /v1/checkout consumer-RPC
+mise run rpc:intent            # authenticated requests
+mise run rpc:created           # Stripe returned a URL
+mise run rpc:failed            # Stripe rejected the session create
+
+# Outbound: dispatcher → consumer
 mise run dispatch:attempted    # what smp tried to send
 mise run dispatch:delivered    # consumer 2xx
 mise run dispatch:failed       # bounces with error meta
 mise run dispatch:logs         # live dispatcher console
 ```
 
-All read directly from xs — no extra logging infra.
+All read directly from xs — no extra logging infra. Smoke-test the inbound side:
+```sh
+mise run test -- rpc-checkout  # 201 happy path + two 401 auth-wall probes
+```
 
 ## 7. Topics, summarized
 
 | Topic | Emitted by | Purpose |
 |---|---|---|
+| `stripe.intent.session.create` | `routes/checkout.nu` | Authenticated `POST /v1/checkout` audit |
+| `stripe.api.session.created` | `routes/checkout.nu` | Stripe returned a checkout URL |
+| `stripe.api.session.failed` | `routes/checkout.nu` | Stripe rejected the session create |
 | `stripe.webhook.received` | `routes/webhook.nu` | Raw POST from Stripe (pre-verify) |
 | `stripe.webhook.verified` | `routes/webhook.nu` | HMAC valid; dispatcher subscribes here |
 | `stripe.webhook.invalid` | `routes/webhook.nu` | Signature mismatch (HTTP 400 response) |
