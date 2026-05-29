@@ -1,23 +1,22 @@
-# Pitchfork supervises the two long-running dev processes so they stay
-# alive across coding sessions, edits, and network blips (stripe listen
-# occasionally drops its session on DNS hiccups — auto-restart fixes it).
+# Pitchfork supervises the two runtime daemons.
 #
 # Start them all:   mise run dev:up
 # Watch logs:       mise run dev:logs
 # Stop them all:    mise run dev:down
 # TUI dashboard:    mise run dev:tui
-# Status snapshot:  mise run dev:status
 
-[daemons.worker]
-run = "mise run worker:dev"
+[daemons.http]
+# http-nu IS the HTTP server AND the event store. The --store flag makes it
+# embed cross.stream; handler.nu uses .cat / .append / .last natively. The
+# --services flag exposes the store via UDS at .xs-store/sock so external
+# `xs` CLI invocations (mise run xs:cat etc) can read/write the same store.
+run = "http-nu --store .xs-store --services --watch 127.0.0.1:8787 scripts/handler.nu"
 auto_restart = true
-# Wrangler prints "Ready on http://localhost:8787" once the wasm build
-# finishes and the local Worker is bound. `start` waits for that line.
-output = "Ready on"
+output = "Listening on"
 
 [daemons.listen]
-run = "mise run stripe:listen"
+# Stripe webhook tunnel — forwards stripe.com → localhost:8787/v1/webhook.
+# Logs the whsec_ on first run; copy into the keychain.
+run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
 auto_restart = true
-# stripe-cli prints "Ready! Your webhook signing secret is whsec_…" once
-# the upstream session is established and forwarding is wired.
 output = "Ready! Your webhook signing secret"

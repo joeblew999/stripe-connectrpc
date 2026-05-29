@@ -3,4 +3,5 @@
 /node_modules
 .dev.vars
 .wrangler/
+.xs-store/
 .DS_Store

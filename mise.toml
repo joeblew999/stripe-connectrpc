@@ -1,19 +1,24 @@
 [tools]
-rust = "1.88"
 "aqua:jdx/pitchfork" = "latest"
 "aqua:nushell/nushell" = "0.112.2"
 "aqua:stripe/stripe-cli" = "1.42.0"
 
-"npm:wrangler" = "latest"
-"cargo:worker-build" = "latest"
+# Runtime stack — cablehead's tools, installed from GitHub releases:
+#   xs       = event store (single daemon, append-only stream)
+#   http-nu  = HTTP server dispatching to nushell handlers
+# pitchfork supervises both as daemons (see pitchfork.toml).
+"github:cablehead/xs" = "0.12.0"
+"github:cablehead/http-nu" = "0.16.0"
 
 [env]
-WASM_TARGET = "wasm32-unknown-unknown"
-RUST_BACKTRACE = "1"
+# xs store path — append-only events live here. Gitignored.
+XS_STORE = "{{ config_root }}/.xs-store"
+# http-nu listen address.
+HTTP_NU_ADDR = "127.0.0.1:8787"
 
 
 # =============================================================================
-# Bootstrap — first-time setup on a fresh clone
+# bootstrap — first-time setup
 # =============================================================================
 
 [tasks."mise:install"]
@@ -21,100 +26,84 @@ description = "Install all CLI tools declared in [tools]"
 run = "mise install"
 
 [tasks."onboard"]
-description = "Interactive: collect CF + Stripe creds, store in macOS keychain via fnox"
+description = "Interactive: collect Stripe creds, store in macOS keychain via fnox"
 run = "nu scripts/onboard.nu"
 
 [tasks."verify"]
-description = "Check toolchain + keychain entries + wasm compile"
+description = "Check toolchain + keychain entries"
 run = "nu scripts/verify.nu"
 
 
 # =============================================================================
-# cargo:* — local Rust dev loop
-# =============================================================================
-
-[tasks."cargo:check"]
-description = "cargo check against wasm32-unknown-unknown"
-run = "cargo check --target $WASM_TARGET"
-
-[tasks."cargo:build"]
-description = "Build the worker via worker-build (release, size-optimized)"
-run = "worker-build --release"
-
-[tasks."cargo:clean"]
-description = "Clean cargo + worker-build output"
-run = "cargo clean ; rm -rf build"
-
-
-# =============================================================================
-# worker:* — wrangler dev / deploy / logs / secrets
-# =============================================================================
-
-[tasks."worker:dev"]
-description = "Run wrangler dev locally (regenerates .dev.vars from fnox keychain first)"
-run = "fnox exec -- nu scripts/worker-dev.nu"
-
-
-# =============================================================================
-# dev:* — process supervision via pitchfork
-# (config in pitchfork.toml — daemons: worker + listen, auto_restart=true)
+# dev:* — supervise the runtime daemons (xs + http-nu + stripe listen)
+# config: pitchfork.toml
 # =============================================================================
 
 [tasks."dev:up"]
-description = "Start worker + stripe-listen daemons (auto-restart on crash)"
+description = "Start xs + http-nu + stripe-listen (auto-restart on crash)"
 run = "pitchfork start -l -f"
 
 [tasks."dev:down"]
-description = "Stop the worker + listen daemons"
-run = "pitchfork stop worker listen"
+description = "Stop all daemons"
+run = "pitchfork stop http listen"
 
 [tasks."dev:status"]
 description = "Show pitchfork daemon status"
 run = "pitchfork list"
 
 [tasks."dev:logs"]
-description = "Tail logs from worker + listen"
-run = "pitchfork logs worker listen"
+description = "Tail logs from all daemons"
+run = "pitchfork logs http listen"
 
 [tasks."dev:tui"]
-description = "Interactive pitchfork dashboard for the daemons"
+description = "Interactive pitchfork dashboard"
 run = "pitchfork tui"
 
-[tasks."dev:restart-worker"]
-description = "Restart just the worker daemon (after .dev.vars or src edit)"
-run = "pitchfork stop worker ; pitchfork start worker"
+[tasks."dev:restart-http"]
+description = "Restart http-nu daemon (after handler.nu edits)"
+run = "pitchfork stop http ; pitchfork start http"
 
 [tasks."dev:restart-listen"]
-description = "Restart just stripe-listen (after a new keychain whsec_)"
+description = "Restart stripe-listen (after a new whsec_)"
 run = "pitchfork stop listen ; pitchfork start listen"
-
-[tasks."worker:deploy"]
-description = "Deploy worker to Cloudflare"
-run = "fnox exec -- wrangler deploy"
-
-[tasks."worker:tail"]
-description = "Tail live Worker logs"
-run = "fnox exec -- wrangler tail"
-
-[tasks."worker:secret-put"]
-description = "Push STRIPE_* secrets from fnox keychain → wrangler secrets"
-run = '''
-fnox exec -- nu -c '$env.STRIPE_SECRET_KEY     | wrangler secret put STRIPE_SECRET_KEY'
-fnox exec -- nu -c '$env.STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
-'''
 
 
 # =============================================================================
-# stripe:* — Stripe CLI for local webhook testing
+# xs:* — event store operations
+# =============================================================================
+
+[tasks."xs:cat"]
+description = "Cat the event stream (http-nu hosts it; we talk via UDS)"
+run = "xs cat .xs-store/sock"
+
+[tasks."xs:last"]
+description = "Last event for a topic — usage: mise run xs:last -- stripe.webhook.received"
+run = "xs last .xs-store/sock"
+
+[tasks."xs:append"]
+description = "Append a test event — usage: mise run xs:append -- topic.name 'body'"
+run = "xs append .xs-store/sock"
+
+
+# =============================================================================
+# stripe:* — Stripe CLI passthroughs
 # =============================================================================
 
 [tasks."stripe:login"]
-description = "Pair stripe-cli with your Stripe account (browser; stores restricted key in ~/.config/stripe)"
+description = "Pair stripe-cli with your Stripe account (browser)"
 run = "stripe login"
+
+[tasks."stripe:listen"]
+description = "Forward Stripe webhooks to local http-nu (used by pitchfork's 'listen' daemon)"
+run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
+
+[tasks."stripe:trigger-completed"]
+description = "Trigger a test checkout.session.completed event"
+run = "fnox exec -- stripe trigger checkout.session.completed"
 
 
 # =============================================================================
-# open:* — launch dashboard pages in the default browser
+# open:* — browser URL launchers
 # =============================================================================
 
 [tasks."open:stripe-keys"]
@@ -138,7 +127,7 @@ description = "Stripe Dashboard → Webhooks (TEST mode)"
 run = "nu scripts/open.nu stripe-webhooks"
 
 [tasks."open:stripe-payment-methods"]
-description = "Stripe Dashboard → Payment Methods (enable PromptPay, Klarna, etc.)"
+description = "Stripe Dashboard → Payment Methods"
 run = "nu scripts/open.nu stripe-payment-methods"
 
 [tasks."open:stripe-products"]
@@ -149,134 +138,127 @@ run = "nu scripts/open.nu stripe-products"
 description = "Stripe Dashboard (TEST mode home)"
 run = "nu scripts/open.nu stripe-dashboard"
 
-[tasks."open:cf-tokens"]
-description = "Cloudflare → API tokens"
-run = "nu scripts/open.nu cf-tokens"
-
-[tasks."open:cf-account"]
-description = "Cloudflare → Dashboard (account id in sidebar)"
-run = "nu scripts/open.nu cf-account"
-
-[tasks."stripe:listen"]
-description = "Forward Stripe webhooks to local wrangler dev (prints whsec_ for keychain)"
-run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
-
-[tasks."stripe:trigger-completed"]
-description = "Trigger a test checkout.session.completed event"
-run = "fnox exec -- stripe trigger checkout.session.completed"
-
 
 # =============================================================================
-# bootstrap:* — Stripe-side state setup (driven by data/*.jsonl + stripe-cli)
-# All wrapped in `fnox exec --` so STRIPE_API_KEY is in scope for stripe-cli.
+# show:* — read-only display (no side effects)
 # =============================================================================
 
 [tasks."show:account"]
-description = "Show Stripe account info — mode, country, currency, capabilities"
+description = "Stripe account info — mode, country, currency, capabilities"
 run = "fnox exec -- nu scripts/bootstrap.nu account"
 
 [tasks."show:status"]
-description = "Snapshot — webhook endpoints, products, prices, portal configs"
+description = "Stripe-side snapshot — webhook endpoints, products, prices, portal configs"
 run = "fnox exec -- nu scripts/bootstrap.nu status"
 
-[tasks."apply:webhook"]
-description = "Create Stripe webhook endpoint pointing at deployed Worker (uses SMP_WORKER_URL)"
-run = "fnox exec -- nu scripts/bootstrap.nu webhook"
+[tasks."show:countries"]
+description = "Seller countries grouped by region with SMP / Payments markers"
+run = "nu scripts/bootstrap.nu countries"
 
-[tasks."apply:portal"]
-description = "Configure default Customer Portal (cancel / update / invoice history)"
-run = "fnox exec -- nu scripts/bootstrap.nu portal"
+[tasks."show:country"]
+description = "Look up modes for one country — usage: mise run show:country -- AU"
+run = "nu scripts/bootstrap.nu check-country"
+
+[tasks."show:tax-codes"]
+description = "SMP-eligible product tax codes (72) grouped by category"
+run = "nu scripts/bootstrap.nu tax-codes"
+
+[tasks."show:tax-coverage"]
+description = "Buyer countries where Stripe handles tax under SMP (82)"
+run = "nu scripts/bootstrap.nu tax-coverage"
+
+[tasks."show:tax"]
+description = "Tax coverage for one country — usage: mise run show:tax -- TH"
+run = "nu scripts/bootstrap.nu check-tax"
+
+[tasks."show:launches"]
+description = "Tracked project × jurisdiction launches with stage"
+run = "nu scripts/bootstrap.nu launches"
+
+[tasks."show:projects"]
+description = "Registered consumer projects under data/projects/"
+run = "nu scripts/bootstrap.nu projects"
+
+[tasks."show:payment-methods"]
+description = "Stripe payment methods currently enabled on this account (live query)"
+run = "fnox exec -- nu scripts/bootstrap.nu payment-methods"
+
+[tasks."show:scan"]
+description = "Row counts across all data/ groups"
+run = "nu scripts/bootstrap.nu scan"
+
+[tasks."show:flow"]
+description = "Print the end-to-end smp flow"
+run = "nu scripts/bootstrap.nu flow"
+
+
+# =============================================================================
+# apply:* — mutate Stripe state from JSONL (idempotent)
+# =============================================================================
 
 [tasks."apply:products"]
-description = "Seed Stripe Products from data/products.jsonl (idempotent)"
+description = "Seed Stripe Products from every data/projects/<slug>/products.jsonl"
 run = "fnox exec -- nu scripts/bootstrap.nu products"
 
 [tasks."apply:prices"]
-description = "Seed Stripe Prices from data/prices.jsonl (idempotent)"
+description = "Seed Stripe Prices from every data/projects/<slug>/prices.jsonl"
 run = "fnox exec -- nu scripts/bootstrap.nu prices"
+
+[tasks."apply:portal"]
+description = "Configure default Customer Portal from data/config/portal-config.jsonl"
+run = "fnox exec -- nu scripts/bootstrap.nu portal"
+
+[tasks."apply:webhook"]
+description = "Register Stripe webhook endpoint at SMP_SERVICE_URL/v1/webhook"
+run = "fnox exec -- nu scripts/bootstrap.nu webhook"
+
+[tasks."apply:payment-methods"]
+description = "Reconcile data/config/payment-methods.jsonl → Stripe account"
+run = "fnox exec -- nu scripts/bootstrap.nu sync-payment-methods"
 
 [tasks."apply:all"]
 description = "Full Stripe-side seed: products → prices → portal → webhook"
 run = "fnox exec -- nu scripts/bootstrap.nu all"
 
+
+# =============================================================================
+# teardown:* — archive per-project Stripe state
+# =============================================================================
+
 [tasks."teardown:project"]
 description = "Archive products + prices for ONE project — usage: mise run teardown:project -- <slug>"
 run = "fnox exec -- nu scripts/bootstrap.nu teardown"
 
-[tasks."show:countries"]
-description = "Show seller countries with SMP-eligible vs Stripe-Payments-only marker"
-run = "nu scripts/bootstrap.nu countries"
-
-[tasks."show:tax-codes"]
-description = "Show SMP-eligible product tax codes grouped by category (72 codes)"
-run = "nu scripts/bootstrap.nu tax-codes"
-
-[tasks."show:tax-coverage"]
-description = "Show buyer countries where Stripe handles indirect tax under SMP (82 countries)"
-run = "nu scripts/bootstrap.nu tax-coverage"
-
-[tasks."show:tax"]
-description = "Check if a buyer country is tax-covered by SMP — usage: mise run show:tax -- TH"
-run = "nu scripts/bootstrap.nu check-tax"
-
-[tasks."show:launches"]
-description = "Show tracked project × jurisdiction launches with stage"
-run = "nu scripts/bootstrap.nu launches"
-
-[tasks."show:projects"]
-description = "List registered consumer projects under data/projects/"
-run = "nu scripts/bootstrap.nu projects"
-
 
 # =============================================================================
-# data:* — keep data/*.jsonl in sync with Stripe's docs
+# data:* — sync data/reference/ against upstream Stripe docs
 # =============================================================================
 
 [tasks."data:check"]
-description = "Fetch Stripe SMP eligibility upstream, diff vs current data/*.jsonl"
+description = "Fetch Stripe docs, diff vs data/reference/*.jsonl"
 run = "nu scripts/data-refresh.nu check"
 
 [tasks."data:refresh"]
-description = "Apply upstream changes to data/*.jsonl (currently stub — see data:check + edit)"
+description = "Apply upstream changes to data/reference/ (stub — manual edit after check)"
 run = "nu scripts/data-refresh.nu apply"
-
-[tasks."show:scan"]
-description = "Summary view of all data/ files"
-run = "nu scripts/bootstrap.nu scan"
-
-[tasks."show:flow"]
-description = "Print the end-to-end smp flow (supported-country Stripe account)"
-run = "nu scripts/bootstrap.nu flow"
 
 
 # =============================================================================
-# test:* — sandbox payment loop
+# test:* — sandbox HIL flows
 # =============================================================================
 
 [tasks."test:customer"]
-description = "Create a test customer in Stripe (smp-test@example.com)"
+description = "Create a test customer in Stripe"
 run = "fnox exec -- nu scripts/bootstrap.nu test-customer"
 
 [tasks."test:checkout"]
-description = "Checkout Session in SMP mode (Stripe is MoR; default: sports_coach_monthly_usd)"
+description = "Create a Checkout Session (SMP mode) — open URL in browser to pay"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout"
 
 [tasks."test:checkout-payments"]
-description = "Checkout Session in Stripe Payments mode (we are MoR; automatic_tax enabled)"
+description = "Create a Checkout Session (Stripe Payments — we are MoR)"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-payments"
 
 [tasks."test:checkout-thai"]
-description = "Thai buyer on AU SMP account — locale=th, address required, 7% Thai VAT applied"
+description = "Thai-buyer Checkout (locale=th, address required, SMP w/ Thai VAT)"
 run = "fnox exec -- nu scripts/bootstrap.nu test-checkout-thai"
-
-[tasks."show:payment-methods"]
-description = "List Stripe payment methods enabled on this account (live query)"
-run = "fnox exec -- nu scripts/bootstrap.nu payment-methods"
-
-[tasks."apply:payment-methods"]
-description = "Reconcile data/reference/payment-methods.jsonl → Stripe account (turn methods on/off)"
-run = "fnox exec -- nu scripts/bootstrap.nu sync-payment-methods"
-
-[tasks."show:country"]
-description = "Show what modes a country supports — usage: mise run show:country -- TH"
-run = "nu scripts/bootstrap.nu check-country"
