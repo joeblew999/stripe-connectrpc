@@ -188,10 +188,23 @@ If `data.object.metadata.project` is set, smp delivers ONLY to that project's co
 
 | Consumer response | smp behavior |
 |---|---|
-| 2xx | Logged as `stripe.dispatch.delivered`. No retry. |
-| 4xx / 5xx / network error / 10s timeout | Logged as `stripe.dispatch.failed` with `error` meta. Currently no automatic retry. |
+| 2xx | Logged as `stripe.dispatch.delivered`. Chain terminates. |
+| 4xx / 5xx / network error / 10s timeout | Logged as `stripe.dispatch.failed`. A `stripe.dispatch.retry` is scheduled with Stripe-style backoff. After 7 total attempts (~1.6 days), `stripe.dispatch.dead-lettered` is emitted and the chain terminates. |
 
 The dispatcher times out at 10 seconds. Keep handlers fast or ack-then-process — the 2xx is the durability gate.
+
+**Retry backoff** (matches Stripe's own webhook retry curve, so consumers who already handle Stripe webhook retries have the same operational model):
+
+| Attempt | Delay after previous |
+|---|---|
+| 2 | 30 seconds |
+| 3 | 5 minutes |
+| 4 | 30 minutes |
+| 5 | 2 hours |
+| 6 | 12 hours |
+| 7 | 24 hours |
+
+The retry chain is **idempotent on the consumer side** — implement your handler so a repeated `event_id` is a no-op (e.g. dedupe on `event.id`). If you 2xx an event you've already processed, that's the right answer.
 
 ## 6. Inspect from the CLI
 
@@ -199,15 +212,17 @@ On the smp host:
 
 ```sh
 # Inbound: /v1/checkout consumer-RPC
-mise run rpc:intent            # authenticated requests
-mise run rpc:created           # Stripe returned a URL
-mise run rpc:failed            # Stripe rejected the session create
+mise run rpc:intent              # authenticated requests
+mise run rpc:created             # Stripe returned a URL
+mise run rpc:failed              # Stripe rejected the session create
 
 # Outbound: dispatcher → consumer
-mise run dispatch:attempted    # what smp tried to send
-mise run dispatch:delivered    # consumer 2xx
-mise run dispatch:failed       # bounces with error meta
-mise run dispatch:logs         # live dispatcher console
+mise run dispatch:attempted      # what smp tried to send (per attempt)
+mise run dispatch:delivered      # consumer 2xx (terminal)
+mise run dispatch:failed         # bounces with error meta (per attempt)
+mise run dispatch:retry          # scheduled re-attempts (next_attempt_at meta)
+mise run dispatch:dead-lettered  # gave up after 7 attempts (terminal)
+mise run dispatch:logs           # live dispatcher console
 ```
 
 All read directly from xs — no extra logging infra. Smoke-test the inbound side:
@@ -225,6 +240,8 @@ mise run test -- rpc-checkout  # 201 happy path + two 401 auth-wall probes
 | `stripe.webhook.received` | `routes/webhook.nu` | Raw POST from Stripe (pre-verify) |
 | `stripe.webhook.verified` | `routes/webhook.nu` | HMAC valid; dispatcher subscribes here |
 | `stripe.webhook.invalid` | `routes/webhook.nu` | Signature mismatch (HTTP 400 response) |
-| `stripe.dispatch.attempted` | `handlers/dispatcher.nu` | About to POST to a consumer |
-| `stripe.dispatch.delivered` | `handlers/dispatcher.nu` | Consumer 2xx ack |
-| `stripe.dispatch.failed` | `handlers/dispatcher.nu` | Consumer non-2xx, network error, or missing secret |
+| `stripe.dispatch.attempted` | `handlers/dispatcher.nu` + `dispatch-retry.nu` | About to POST to a consumer (one per attempt) |
+| `stripe.dispatch.delivered` | both | Consumer 2xx ack (terminal) |
+| `stripe.dispatch.failed` | both | Consumer non-2xx / network / timeout (one per attempt) |
+| `stripe.dispatch.retry` | both | Re-attempt scheduled; meta has `next_attempt_at` + `attempt` + `verified_hash` |
+| `stripe.dispatch.dead-lettered` | both | Gave up after `MAX_ATTEMPTS` or fatal config error (terminal) |

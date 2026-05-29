@@ -27,7 +27,15 @@ output = "Ready! Your webhook signing secret"
 
 [daemons.dispatcher]
 # Phase 3 consumer fan-out (ADR-10). Tails xs for stripe.webhook.verified
-# and POSTs HMAC-signed events to each consumer's webhook_url.
-# fnox exec gives fnox access to the per-project signing secret keychain items.
+# and POSTs HMAC-signed events to each consumer's webhook_url. On 5xx /
+# timeout / refused, emits a stripe.dispatch.retry frame that
+# `dispatch-retry` (below) will re-attempt on a Stripe-style backoff.
 run = "fnox exec -- nu scripts/handlers/dispatcher.nu"
+auto_restart = true
+
+[daemons.dispatch-retry]
+# Polls xs every 15s for due stripe.dispatch.retry frames and re-dispatches
+# via the same shared helper. After 7 total attempts (last at +24h), emits
+# stripe.dispatch.dead-lettered and gives up. xs IS the queue.
+run = "fnox exec -- nu scripts/handlers/dispatch-retry.nu"
 auto_restart = true

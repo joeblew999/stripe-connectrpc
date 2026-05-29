@@ -102,8 +102,10 @@ HMAC verify: `routes/webhook.nu` shells to `openssl dgst -sha256 -hmac <secret>`
 - xs as the queue (no Redis / CF Queues / NATS).
 - Consumer-side verify helper in [CONSUMERS.md](CONSUMERS.md) (TS + Rust).
 
-**Open questions deferred:**
-- Retry policy on `stripe.dispatch.failed` (today: none; just logged).
+**Open questions resolved in Decision 12 (below):**
+- ~~Retry policy on `stripe.dispatch.failed`~~ — implemented as Stripe-style backoff + dead-letter via a `dispatch-retry` daemon.
+
+**Still open:**
 - Concurrent dispatch fan-out per project (today: serial).
 - `event_filters` granularity (today: exact + trailing `*`).
 
@@ -131,11 +133,58 @@ HMAC verify: `routes/webhook.nu` shells to `openssl dgst -sha256 -hmac <secret>`
 **What this rules out:**
 - Public, unauthenticated routes for creating Stripe state. If a future use-case needs unauth (e.g. a public donation page), it gets its own dedicated route with its own per-route auth model.
 
+## Decision 12 — Retry + dead-letter on dispatch failure — 2026-05-29
+
+**Status:** ACCEPTED. Implemented in `scripts/handlers/lib.nu` (shared) + `scripts/handlers/dispatch-retry.nu` (poll daemon). Supervised by pitchfork as the `dispatch-retry` daemon alongside the existing `dispatcher`.
+
+**Problem:** Decision 10 fanned events out to consumers with HMAC + POST but didn't retry on failure. A consumer down for 30 seconds during a deploy would lose its events permanently. Stripe's own webhook system retries for ~3 days; we were strictly worse than Stripe at being a webhook deliverer.
+
+**Solution:**
+
+When a dispatch fails (non-2xx, network error, timeout), `dispatch_to_consumer` emits BOTH:
+1. `stripe.dispatch.failed` (per-attempt outcome — same as before)
+2. `stripe.dispatch.retry` with metadata: `{event_id, project, url, event_type, attempt: N+1, next_attempt_at: <ISO 8601>, verified_hash}`
+
+The `dispatch-retry` daemon polls xs every 15s for `.retry` frames where:
+- `now >= next_attempt_at`
+- No later `.delivered` / `.dead-lettered` exists for the same `(event_id, project)`
+- This frame is the highest `attempt` for its `(event_id, project)` (no superseding retry)
+
+For each due retry, it fetches the body from CAS via `verified_hash` and calls the same `dispatch_to_consumer` helper the initial-dispatch path uses. Outcome → either `.delivered` (terminal success), another `.retry` (still under cap), or `.dead-lettered` (cap reached).
+
+**Backoff schedule** (matches Stripe's own webhook retry curve):
+
+| Attempt | Delay | Cumulative |
+|---|---|---|
+| 1 | — | 0s |
+| 2 | 30s | 30s |
+| 3 | 5m | ~5.5m |
+| 4 | 30m | ~36m |
+| 5 | 2h | ~2.6h |
+| 6 | 12h | ~14.6h |
+| 7 | 24h | ~38.6h |
+
+After 7 total attempts (~1.6 days), `.dead-lettered` is emitted and the chain stops.
+
+**Config errors (missing signing secret) skip retry.** If `fnox get <signing_secret_keychain>` returns empty, we emit `.failed` + immediate `.dead-lettered` with `reason: "config: missing signing secret"`. Retrying with the same missing secret would just re-fail; the operator needs to `fnox set` + `dev:restart-dispatcher`.
+
+**Why xs as the queue, not Redis / CF Queues / NATS:**
+- xs is already part of the runtime — adding a queue technology doubles the moving parts for ~nothing gained.
+- Retries are scheduling, and `next_attempt_at` is just a timestamp in event metadata. The poll loop is 30 lines.
+- Replay-friendliness: every retry attempt is a recorded event. `mise run dispatch:retry` shows the whole pending schedule.
+
+**End-to-end verified:**
+- Initial dispatch fails (URL refused) → `.failed (attempt=1)` + `.retry (attempt=2, +30s)`.
+- 30s later, `dispatch-retry` picks up the retry → `.attempted (attempt=2)` → `.failed (attempt=2)` + `.retry (attempt=3, +5m)`.
+- 5 minutes later, attempt=3 fires → `.failed (attempt=3)` + `.retry (attempt=4, +30m)`.
+- Synthetic injection at `attempt=7` → dispatched → failed → `.dead-lettered` with `reason: "non-2xx after 7 attempts"`.
+
 ## Revisions
 
+- **2026-05-29** — Decision 12 added + ACCEPTED. Retry + dead-letter live; full backoff chain verified through attempt 3, dead-letter verified via synthetic attempt=7 injection.
 - **2026-05-29** — Decision 11 added + ACCEPTED. `/v1/checkout` live; full consumer-RPC loop verified (happy path 201 + two 401 auth-wall probes pass).
 - **2026-05-29** — Decision 10 added + ACCEPTED. Dispatcher live; full chain verified end-to-end with real Stripe trigger → consumer 200.
-- **2026-05-29** — Repo restructure: scripts split into `scripts/{bootstrap,routes,handlers}/`; CF scaffold moved to `alt-runtime/cloudflare/`; ~50 mise tasks via verb dispatch.
+- **2026-05-29** — Repo restructure: scripts split into `scripts/{bootstrap,routes,handlers}/`; CF scaffold moved to `alt-runtime/cloudflare/`; ~55 mise tasks via verb dispatch.
 - **2026-05-29** — Decision 9 added; runtime pivoted to http-nu + xs; Cloudflare retained as alt-runtime.
 - **2026-05-28** — Decision 8 added (multi-project metadata namespacing).
 - **2026-05-28** — Real $31.90 sandbox payment on AU-registered `acct_1QJrzxABkTiOs5on` end-to-end; 12 webhook events HMAC-verified.

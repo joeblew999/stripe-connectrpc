@@ -12,8 +12,9 @@ Stack: **http-nu + xs + nushell + stripe-cli + pitchfork + fnox + mise**. Cloudf
 | 2 | Runtime — http-nu + xs + `/v1/webhook` HMAC verify | ✓ |
 | 3a | Consumer fan-out — dispatcher tails xs, signs+POSTs to consumer webhooks ([ADR-10](docs/ADR.md)) | ✓ |
 | 3b | Consumer-RPC — `POST /v1/checkout` bearer-auth; smp creates the Checkout Session ([ADR-11](docs/ADR.md)) | ✓ |
+| 3c | Retry + dead-letter — Stripe-style backoff (30s→24h, 7 attempts), xs IS the queue ([ADR-12](docs/ADR.md)) | ✓ |
 
-`mise run verify:all` = **48 PASS / 0 FAIL / 16 SKIP**. Real $31.90 sandbox payment landed end-to-end; full bidirectional contract verified.
+`mise run verify:all` = **51 PASS / 0 FAIL / 16 SKIP**. Real $31.90 sandbox payment landed end-to-end; full bidirectional contract verified; retry chain verified through attempt 3; dead-letter verified via synthetic attempt=7 injection.
 
 ## Self-documenting CLI
 

@@ -132,6 +132,8 @@ def verify_all [] {
         {name: "dispatch:attempted"}
         {name: "dispatch:delivered"}
         {name: "dispatch:failed"}
+        {name: "dispatch:retry"}
+        {name: "dispatch:dead-lettered"}
 
         # rpc (Phase 3b — inbound /v1/checkout)
         {name: "rpc:intent"}
@@ -179,6 +181,7 @@ def verify_all [] {
         {name: "dev:restart-http"}
         {name: "dev:restart-listen"}
         {name: "dev:restart-dispatcher"}
+        {name: "dev:restart-dispatch-retry"}
     ]
 
     mut pass = 0

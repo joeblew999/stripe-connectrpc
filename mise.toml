@@ -50,12 +50,12 @@ run = "nu scripts/verify.nu --all"
 # =============================================================================
 
 [tasks."dev:up"]
-description = "Start http-nu+xs + stripe-listen + dispatcher (auto-restart on crash)"
+description = "Start http-nu+xs + stripe-listen + dispatcher + dispatch-retry (auto-restart on crash)"
 run = "pitchfork start -l -f"
 
 [tasks."dev:down"]
 description = "Stop all daemons"
-run = "pitchfork stop http listen dispatcher"
+run = "pitchfork stop http listen dispatcher dispatch-retry"
 
 [tasks."dev:status"]
 description = "Show pitchfork daemon status"
@@ -63,7 +63,7 @@ run = "pitchfork list"
 
 [tasks."dev:logs"]
 description = "Tail logs from all daemons"
-run = "pitchfork logs http listen dispatcher"
+run = "pitchfork logs http listen dispatcher dispatch-retry"
 
 [tasks."dev:tui"]
 description = "Interactive pitchfork dashboard"
@@ -78,8 +78,12 @@ description = "Restart stripe-listen (after a new whsec_)"
 run = "pitchfork stop listen ; pitchfork start listen"
 
 [tasks."dev:restart-dispatcher"]
-description = "Restart dispatcher (after dispatcher.nu / project consumer block edits)"
+description = "Restart dispatcher (after dispatcher.nu / lib.nu / project consumer block edits)"
 run = "pitchfork stop dispatcher ; pitchfork start dispatcher"
+
+[tasks."dev:restart-dispatch-retry"]
+description = "Restart dispatch-retry daemon (after dispatch-retry.nu / lib.nu edits)"
+run = "pitchfork stop dispatch-retry ; pitchfork start dispatch-retry"
 
 # =============================================================================
 # xs:* — event store operations
@@ -126,8 +130,16 @@ description = "Recent stripe.dispatch.delivered frames"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.delivered&limit=20" | jq -c ".[] | {id, meta}"'
 
 [tasks."dispatch:failed"]
-description = "Recent stripe.dispatch.failed frames"
+description = "Recent stripe.dispatch.failed frames (one per failed attempt)"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.failed&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."dispatch:retry"]
+description = "Recent stripe.dispatch.retry frames (scheduled re-attempts)"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.retry&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."dispatch:dead-lettered"]
+description = "Recent stripe.dispatch.dead-lettered frames (gave up after MAX_ATTEMPTS)"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.dead-lettered&limit=20" | jq -c ".[] | {id, meta}"'
 
 # =============================================================================
 # rpc:* — Consumer-RPC inspection (POST /v1/checkout audit trail)

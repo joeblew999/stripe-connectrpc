@@ -38,7 +38,9 @@ scripts/
 │   ├── webhook.nu            ← POST /v1/webhook + HMAC verify (Stripe → smp)
 │   └── checkout.nu           ← POST /v1/checkout + Bearer auth (consumer → smp)
 ├── handlers/
-│   └── dispatcher.nu         ← Phase 3 xs subscriber → consumer webhook fan-out
+│   ├── lib.nu                ← shared: dispatch_to_consumer (HMAC sign + POST + outcome events)
+│   ├── dispatcher.nu         ← Phase 3a: tails .verified, dispatches at attempt=1
+│   └── dispatch-retry.nu     ← Phase 3 retry (ADR-12): polls .retry, re-dispatches with backoff
 ├── open.nu                   ← idempotent browser launcher
 ├── verify.nu                 ← env check (quick) + verify:all (exhaustive)
 └── onboard.nu                ← interactive secret prompts
@@ -87,9 +89,11 @@ data/
 | `stripe.webhook.received` | `routes/webhook.nu` | Raw POST from Stripe (pre-verify) |
 | `stripe.webhook.verified` | `routes/webhook.nu` | HMAC validated; dispatcher subscribes here |
 | `stripe.webhook.invalid` | `routes/webhook.nu` | Signature mismatch; HTTP 400 response |
-| `stripe.dispatch.attempted` | `handlers/dispatcher.nu` | About to POST to a consumer |
-| `stripe.dispatch.delivered` | `handlers/dispatcher.nu` | Consumer 2xx ack |
-| `stripe.dispatch.failed` | `handlers/dispatcher.nu` | Consumer non-2xx, network error, or missing secret |
+| `stripe.dispatch.attempted` | `handlers/dispatcher.nu` + `dispatch-retry.nu` | About to POST to a consumer (one per attempt) |
+| `stripe.dispatch.delivered` | both | Consumer 2xx ack (terminal) |
+| `stripe.dispatch.failed` | both | Consumer non-2xx / network / timeout (one per attempt) |
+| `stripe.dispatch.retry` | both | Re-attempt scheduled; meta has `next_attempt_at` + `verified_hash` |
+| `stripe.dispatch.dead-lettered` | both | Gave up after 7 attempts or fatal config error (terminal) |
 
 ## How to find anything
 
