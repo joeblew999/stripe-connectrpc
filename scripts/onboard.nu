@@ -1,12 +1,10 @@
 #!/usr/bin/env nu
-# smp onboarding — interactive collection of CF + Stripe creds into the
-# macOS keychain via fnox. Idempotent: already-set values are kept.
+# smp onboarding — interactive collection of Stripe creds into the macOS
+# keychain via fnox. Idempotent: already-set values are kept.
 #
 # Auto-opens the relevant dashboard page in the browser before each
 # prompt, so you can copy the value directly without hunting for it.
 
-# Cross-platform open (duplicated from scripts/open.nu — small enough
-# that inlining beats nushell-module import dance).
 def open_url [url: string] {
     let os = $nu.os-info.name
     match $os {
@@ -25,7 +23,7 @@ def ensure_secret [name: string, prompt: string, hint: string, url: string] {
         return
     }
     print $"\n  ($prompt)"
-    if not ($hint | is-empty) { print $"    hint:   ($hint)" }
+    if not ($hint | is-empty) { print $"    hint:    ($hint)" }
     if not ($url | is-empty) {
         print $"    opening: ($url)"
         open_url $url
@@ -46,25 +44,19 @@ print "=============="
 print "Each prompt opens the right dashboard page in your browser."
 print "Already-set values are kept — re-run any time to fill gaps."
 
-ensure_secret "CLOUDFLARE_API_TOKEN" \
-    "Cloudflare API token" \
-    "Create a token with Workers Scripts + Account Settings perms" \
-    "https://dash.cloudflare.com/profile/api-tokens"
+# --- required ---
+print "\n[1/2] Stripe (required) ----------------"
 
-ensure_secret "CLOUDFLARE_ACCOUNT_ID" \
-    "Cloudflare account ID" \
-    "Right sidebar of any account page in the CF dashboard" \
-    "https://dash.cloudflare.com"
+ensure_secret "SMP_STRIPE_SECRET_KEY" "Stripe secret key (sk_test_... for now)" "Click 'Reveal test key' next to the Secret key row" "https://dashboard.stripe.com/test/apikeys"
 
-ensure_secret "SMP_STRIPE_SECRET_KEY" \
-    "Stripe secret key (sk_test_... for now)" \
-    "Click 'Reveal test key' next to the Secret key row" \
-    "https://dashboard.stripe.com/test/apikeys"
+ensure_secret "SMP_STRIPE_WEBHOOK_SECRET" "Stripe webhook signing secret (whsec_...)" "Skip for now — mise run dev:up prints one on first run via stripe listen" ""
 
-ensure_secret "SMP_STRIPE_WEBHOOK_SECRET" \
-    "Stripe webhook signing secret (whsec_...)" \
-    "Skip for now — `mise run stripe:listen` prints one on first run" \
-    ""
+# --- optional ---
+print "\n[2/2] Cloudflare (optional — only for the cf:* alt runtime) ----------------"
+
+ensure_secret "CLOUDFLARE_API_TOKEN" "Cloudflare API token" "Create a token with Workers Scripts + Account Settings perms" "https://dash.cloudflare.com/profile/api-tokens"
+
+ensure_secret "CLOUDFLARE_ACCOUNT_ID" "Cloudflare account ID" "Right sidebar of any account page in the CF dashboard" "https://dash.cloudflare.com"
 
 print "\nDone."
-print "Next: mise run verify  → mise run show:account"
+print "Next: mise run verify  →  mise run dev:up  →  mise run test -- checkout"
