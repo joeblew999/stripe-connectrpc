@@ -10,7 +10,10 @@
 # embed cross.stream; handler.nu uses .cat / .append / .last natively. The
 # --services flag exposes the store via UDS at .xs-store/sock so external
 # `xs` CLI invocations (mise run xs:cat etc) can read/write the same store.
-run = "http-nu --store .xs-store --services --watch 127.0.0.1:8787 scripts/handler.nu"
+#
+# fnox exec wraps the daemon so STRIPE_WEBHOOK_SECRET (and friends) are in
+# scope for the handler — needed for HMAC verification of inbound webhooks.
+run = "fnox exec -- http-nu --store .xs-store --services --watch 127.0.0.1:8787 scripts/handler.nu"
 auto_restart = true
 output = "Listening on"
 

@@ -1,69 +1,134 @@
 #!/usr/bin/env nu
 # Stripe-side bootstrap + test helpers — drives the official `stripe` CLI.
-# async-stripe is library-only (no Rust CLI), so JSONL → Stripe state is
-# nushell + stripe-cli.
 #
-# All subcommands are idempotent (check-then-create).
-# Run via mise: `mise run show:*` (read-only), `mise run apply:*` (mutate Stripe),
-# `mise run teardown:project <slug>` (cleanup), `mise run test:*` (one-off).
-# Direct: `nu scripts/bootstrap.nu <subcommand> [arg]`.
+# Verb-first dispatch (the canonical surface):
+#   nu scripts/bootstrap.nu show <thing>      # read-only display
+#   nu scripts/bootstrap.nu apply <thing>     # mutate Stripe (idempotent)
+#   nu scripts/bootstrap.nu test <flow>       # one-off test resources
+#   nu scripts/bootstrap.nu teardown <slug>   # archive per-project state
+#
+# Via mise (collapsed to 4 tasks via usage args):
+#   mise run show -- account|status|countries|country|tax-codes|tax-coverage|tax|launches|projects|payment-methods|scan|flow [ISO]
+#   mise run apply -- products|prices|portal|webhook|payment-methods|all
+#   mise run test -- customer|checkout|checkout-payments|checkout-thai [lookup_key]
+#   mise run teardown -- <project-slug>
+#
+# All subcommands are idempotent.
 
 def main [
-    cmd: string = "status"
-    arg?: string
+    p1: string = "show"     # verb OR backward-compat flat subcommand
+    p2?: string             # subcommand within verb (e.g. "account"), or arg for flat
+    p3?: string             # arg for verb-form (e.g. ISO code)
 ] {
-    match $cmd {
-        # Setup
-        "products"      => { seed_products }
-        "prices"        => { seed_prices }
-        "webhook"       => { register_webhook }
-        "portal"        => { configure_portal }
-        "all"           => { seed_products ; seed_prices ; configure_portal ; register_webhook }
-        "teardown"      => {
-            if ($arg | is-empty) {
-                print "✗ teardown requires a project slug: nu scripts/bootstrap.nu teardown <slug>"
+    let verbs = ["show" "apply" "test" "teardown"]
+    if $p1 in $verbs {
+        dispatch_verb $p1 $p2 $p3
+    } else {
+        # Backward-compat: old flat subcommand form.
+        dispatch_flat $p1 $p2
+    }
+}
+
+def dispatch_verb [verb: string, sub: any, arg: any] {
+    match $verb {
+        "show" => {
+            let s = ($sub | default "status")
+            match $s {
+                "status"           => { show_status }
+                "account"          => { show_account }
+                "countries"        => { print_countries }
+                "country"          => { check_country ($arg | default "TH") }
+                "tax-codes"        => { print_tax_codes }
+                "tax-coverage"     => { print_tax_coverage }
+                "tax"              => { check_tax_coverage ($arg | default "TH") }
+                "launches"         => { print_launches }
+                "projects"         => { print_projects }
+                "payment-methods"  => { list_payment_methods }
+                "scan"             => { print_scan }
+                "flow"             => { print_flow }
+                _ => { print $"show: unknown subcommand '($s)'"; print_show_help; exit 1 }
+            }
+        }
+        "apply" => {
+            let s = ($sub | default "all")
+            match $s {
+                "products"         => { seed_products }
+                "prices"           => { seed_prices }
+                "portal"           => { configure_portal }
+                "webhook"          => { register_webhook }
+                "payment-methods"  => { sync_payment_methods }
+                "all"              => { seed_products ; seed_prices ; configure_portal ; register_webhook }
+                _ => { print $"apply: unknown subcommand '($s)'"; print_apply_help; exit 1 }
+            }
+        }
+        "test" => {
+            let s = ($sub | default "customer")
+            match $s {
+                "customer"           => { test_customer }
+                "checkout"           => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
+                "checkout-payments"  => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
+                "checkout-thai"      => { test_checkout_thai_buyer }
+                _ => { print $"test: unknown subcommand '($s)'"; print_test_help; exit 1 }
+            }
+        }
+        "teardown" => {
+            if ($sub | is-empty) {
+                print "✗ teardown requires a project slug — usage: nu bootstrap.nu teardown <slug>"
                 exit 1
             }
-            teardown_project $arg
+            teardown_project $sub
         }
+    }
+}
 
-        # Info
-        "status"        => { show_status }
-        "account"       => { show_account }
-        "countries"     => { print_countries }
-        "tax-codes"     => { print_tax_codes }
-        "tax-coverage"  => { print_tax_coverage }
-        "launches"      => { print_launches }
-        "projects"      => { print_projects }
-        "scan"          => { print_scan }
-        "flow"          => { print_flow }
-
-        # Test loop
-        "test-customer"          => { test_customer }
-        "test-checkout"          => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
+# Backward-compat dispatcher for the old flat subcommand form. Kept so
+# anyone with muscle memory or external scripts using the old names keeps
+# working. The verb-form above is the canonical surface.
+def dispatch_flat [cmd: string, arg: any] {
+    match $cmd {
+        "products" => { seed_products }
+        "prices" => { seed_prices }
+        "webhook" => { register_webhook }
+        "portal" => { configure_portal }
+        "all" => { seed_products ; seed_prices ; configure_portal ; register_webhook }
+        "status" => { show_status }
+        "account" => { show_account }
+        "countries" => { print_countries }
+        "tax-codes" => { print_tax_codes }
+        "tax-coverage" => { print_tax_coverage }
+        "launches" => { print_launches }
+        "projects" => { print_projects }
+        "scan" => { print_scan }
+        "flow" => { print_flow }
+        "test-customer" => { test_customer }
+        "test-checkout" => { test_checkout ($arg | default "sports_coach_monthly_usd") "smp" }
         "test-checkout-payments" => { test_checkout ($arg | default "sports_coach_monthly_usd") "payments" }
-        "test-checkout-thai"     => { test_checkout_thai_buyer }
-        "payment-methods"        => { list_payment_methods }
-        "sync-payment-methods"   => { sync_payment_methods }
-        "check-country"          => { check_country ($arg | default "TH") }
-        "check-tax"              => { check_tax_coverage ($arg | default "TH") }
-
+        "test-checkout-thai" => { test_checkout_thai_buyer }
+        "payment-methods" => { list_payment_methods }
+        "sync-payment-methods" => { sync_payment_methods }
+        "check-country" => { check_country ($arg | default "TH") }
+        "check-tax" => { check_tax_coverage ($arg | default "TH") }
         _ => {
             print $"unknown subcommand: ($cmd)"
             print ""
-            print "setup:    products | prices | webhook | portal | all"
-            print "teardown: teardown <slug>   (archives products+prices for one project)"
-            print "info:   status | account | countries | tax-codes | tax-coverage | launches | projects | scan | flow"
-            print "        check-country <ISO>"
-            print "        check-tax <ISO>           (is buyer country covered by SMP tax?)"
-            print "test:   test-customer"
-            print "        test-checkout          [lookup_key]   (SMP mode)"
-            print "        test-checkout-payments [lookup_key]   (Stripe Payments — we are MoR)"
-            print "        test-checkout-thai                    (Thai buyer; SMP w/ locale=th + address required)"
-            print "info:   payment-methods                       (what Stripe payment methods are enabled on this account)"
+            print "  verbs:  show | apply | test | teardown    (canonical)"
+            print "          Run `nu bootstrap.nu show` for the show subcommand list, etc."
             exit 1
         }
     }
+}
+
+def print_show_help [] {
+    print "  show:  account | status | countries | country <ISO> | tax-codes | tax-coverage | tax <ISO>"
+    print "         launches | projects | payment-methods | scan | flow"
+}
+
+def print_apply_help [] {
+    print "  apply: products | prices | portal | webhook | payment-methods | all"
+}
+
+def print_test_help [] {
+    print "  test:  customer | checkout [lookup_key] | checkout-payments [lookup_key] | checkout-thai"
 }
 
 # =============================================================================
