@@ -37,7 +37,7 @@ def main [
         exit 1
     }
 
-    let url = ($pages | get -i $page)
+    let url = ($pages | get --optional $page)
     if ($url | is-empty) {
         print $"unknown page: ($page)"
         exit 1
