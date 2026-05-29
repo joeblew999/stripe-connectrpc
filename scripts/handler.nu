@@ -3,9 +3,16 @@
 # with --store .xs-store.
 #
 # Routes:
-#   GET  /health      → liveness probe
-#   POST /v1/webhook  → Stripe webhook receiver: HMAC verify + append to xs
-#   POST /v1/checkout → consumer RPC scaffold (501 not yet implemented)
+#   GET  /health                          → liveness probe
+#   GET  /events?limit=N&topic=T          → recent events (CLI inspection, no browser)
+#   GET  /events/last?topic=T             → single most-recent event (optional topic)
+#   POST /v1/webhook                      → Stripe webhook receiver: HMAC verify + append to xs
+#   POST /v1/checkout                     → consumer RPC scaffold (501)
+#
+# Examples (CLI inspection from any shell):
+#   curl http://localhost:8787/events?limit=10 | jq
+#   curl 'http://localhost:8787/events?topic=stripe.webhook.verified' | jq
+#   curl http://localhost:8787/events/last?topic=stripe.webhook.received | jq
 #
 # Topics appended to xs:
 #   stripe.webhook.received  — raw inbound (pre-verify)
@@ -43,10 +50,36 @@ def verify_stripe_signature [sig_header: string, body: string, secret: string] {
 
 {|req|
     dispatch $req [
+        # ─── liveness ─────────────────────────────────────────────────────────
         (route {method: "GET" path: "/health"} {|req ctx|
             "smp ok"
         })
 
+        # ─── CLI-friendly event inspection (curl + jq from any shell) ───────
+        (route {method: "GET" path: "/events"} {|req ctx|
+            let limit = ($req.query? | get --optional limit | default "20" | into int)
+            let topic = ($req.query? | get --optional topic | default "")
+            let frames = if ($topic | is-empty) {
+                .cat | last $limit
+            } else {
+                .cat -T $topic | last $limit
+            }
+            $frames
+            | metadata set {merge {http.response: {headers: {Content-Type: "application/json"}}}}
+        })
+
+        (route {method: "GET" path: "/events/last"} {|req ctx|
+            let topic = ($req.query? | get --optional topic | default "")
+            let frame = if ($topic | is-empty) {
+                .cat | last 1
+            } else {
+                .cat -T $topic | last 1
+            }
+            $frame
+            | metadata set {merge {http.response: {headers: {Content-Type: "application/json"}}}}
+        })
+
+        # ─── Stripe webhook receiver ──────────────────────────────────────────
         (route {method: "POST" path: "/v1/webhook"} {|req ctx|
             let body = ($in | default "" | into string)
             let sig  = ($req.headers? | get --optional "stripe-signature" | default "")
@@ -76,12 +109,14 @@ def verify_stripe_signature [sig_header: string, body: string, secret: string] {
             }
         })
 
+        # ─── consumer RPC scaffold ────────────────────────────────────────────
         (route {method: "POST" path: "/v1/checkout"} {|req ctx|
-            # Consumer RPC scaffold — verify bearer, parse JSON, emit
-            # stripe.intent.session.create, await reply, return URL.
+            # Future: verify bearer, parse JSON, emit stripe.intent.session.create,
+            # await reply, return URL. For now: 501.
             "not yet implemented" | metadata set {merge {http.response: {status: 501}}}
         })
 
+        # ─── catch-all 404 ────────────────────────────────────────────────────
         (route true {|req ctx|
             $"no route for ($req.method) ($req.path)"
             | metadata set {merge {http.response: {status: 404}}}

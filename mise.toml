@@ -72,7 +72,7 @@ run = "pitchfork stop listen ; pitchfork start listen"
 # =============================================================================
 
 [tasks."xs:cat"]
-description = "Cat the event stream (http-nu hosts it; we talk via UDS)"
+description = "Cat the event stream (via UDS — http-nu hosts it)"
 run = "xs cat .xs-store/sock"
 
 [tasks."xs:last"]
@@ -82,6 +82,14 @@ run = "xs last .xs-store/sock"
 [tasks."xs:append"]
 description = "Append a test event — usage: mise run xs:append -- topic.name 'body'"
 run = "xs append .xs-store/sock"
+
+[tasks."xs:tail"]
+description = "Tail recent events via the inspection HTTP endpoint (curl + jq)"
+run = 'curl -s "http://localhost:8787/events?limit=20" | jq -c ".[] | {topic, id, meta}"'
+
+[tasks."xs:counts"]
+description = "Group recent events by topic + count (CLI inspection)"
+run = 'curl -s "http://localhost:8787/events?limit=200" | jq -r "group_by(.topic) | map({topic: .[0].topic, count: length}) | sort_by(-.count) | .[] | \"\(.count)  \(.topic)\""'
 
 # =============================================================================
 # stripe:* — Stripe CLI passthroughs
