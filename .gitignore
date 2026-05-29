@@ -1,7 +1,10 @@
-/target
-/build
-/node_modules
-.dev.vars
-.wrangler/
+# primary runtime artifacts
 .xs-store/
 .DS_Store
+/node_modules
+
+# alt-runtime/cloudflare/ build + dev artifacts
+alt-runtime/cloudflare/target/
+alt-runtime/cloudflare/build/
+alt-runtime/cloudflare/.dev.vars
+alt-runtime/cloudflare/.wrangler/

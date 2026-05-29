@@ -4,7 +4,7 @@ Context for Claude (and humans) working in this repo.
 
 ## What this is
 
-**stripe-smp** — Stripe Managed Payments shared service. The runtime is **http-nu + xs** (cablehead's stack); the bootstrap layer is mise + nushell + fnox + stripe-cli driven by JSONL. The Cloudflare Workers scaffold (`src/`, `wrangler.toml`, `cf:*` tasks) is retained as an alternative runtime for if/when we want CDN edge deployment.
+**stripe-smp** — Stripe Managed Payments shared service. The runtime is **http-nu + xs** (cablehead's stack); the bootstrap layer is mise + nushell + fnox + stripe-cli driven by JSONL. The Cloudflare Workers scaffold lives under `alt-runtime/cloudflare/` and is retained as an alternative runtime for if/when we want CDN edge deployment.
 
 Stripe is merchant of record. Consumer apps call smp; smp owns the Stripe account, the keys, and the webhook surface. Web apps never embed Stripe.js.
 
@@ -12,13 +12,52 @@ Stripe is merchant of record. Consumer apps call smp; smp owns the Stripe accoun
 
 - **xs** (cablehead/cross-stream) — embedded event store, append-only stream + topic indexing.
 - **http-nu** (cablehead) — HTTP server, dispatches routes to nushell handler closures via `use http-nu/router`.
-- **nushell** — handlers (`scripts/handler.nu`), bootstrap (`scripts/bootstrap.nu`), data refresh, onboarding, verify.
+- **nushell** — every handler + every bootstrap script + the dispatcher.
 - **stripe-cli** — Stripe API calls for the bootstrap layer + webhook tunnel forwarding (`stripe listen`).
-- **pitchfork** — supervises `http-nu` + `stripe listen` as daemons (see `pitchfork.toml`).
+- **pitchfork** — supervises three daemons: `http`, `listen`, `dispatcher` (see `pitchfork.toml`).
 - **fnox** — macOS keychain → env vars, scoped via `fnox exec --`.
 - **mise** — tool versions + the entire task surface.
 
 Runtime is OS-neutral and lives entirely on your laptop or any VPS — no vendor lock-in.
+
+## Layout
+
+```
+scripts/
+├── bootstrap.nu              ← thin verb dispatcher (≈90 lines)
+├── bootstrap/
+│   ├── lib.nu                ← shared: stripe_config, list_projects, normalize_arg
+│   ├── show.nu               ← read-only display verbs
+│   ├── apply.nu              ← mutate Stripe state from JSONL (idempotent)
+│   ├── test.nu               ← sandbox HIL flows
+│   └── teardown.nu           ← per-project archive (cross-leak safe)
+├── handler.nu                ← http-nu closure (≈25 lines) — composes routes
+├── routes/
+│   ├── health.nu             ← GET /health
+│   ├── events.nu             ← GET /events, GET /events/last
+│   ├── webhook.nu            ← POST /v1/webhook + HMAC verify
+│   └── checkout.nu           ← POST /v1/checkout (Phase 3+: consumer RPC)
+├── handlers/
+│   └── dispatcher.nu         ← Phase 3 xs subscriber → consumer webhook fan-out
+├── open.nu                   ← idempotent browser launcher
+├── verify.nu                 ← env check (quick) + verify:all (exhaustive)
+└── onboard.nu                ← interactive secret prompts
+
+alt-runtime/
+└── cloudflare/               ← alt runtime (cf:* tasks); cargo/src/wrangler live here
+
+docs/
+├── ADR.md                    ← Decisions 1–10 (latest: consumer fan-out model)
+├── SETUP.md                  ← Stripe account walkthrough
+├── TASKS.md                  ← task → script → data matrix
+└── CONSUMERS.md              ← Phase 3 consumer integration contract
+
+data/
+├── reference/                ← Stripe-sourced (hand-edited)
+├── config/                   ← our config; applied via `apply -- *`
+├── projects/<slug>/          ← per consumer app: project.json + products/prices.jsonl
+└── launches.jsonl            ← per-market-entry tracker
+```
 
 ## Conventions
 
@@ -29,38 +68,35 @@ Runtime is OS-neutral and lives entirely on your laptop or any VPS — no vendor
   - `mise run teardown -- <slug>` — archive a project's Stripe state
   - `mise run test -- <flow> [arg]` — sandbox HIL flows
 - **Declarative data is JSONL** under `data/`:
-  - `data/reference/*.jsonl` — Stripe-sourced; refresh via `data:check`, never hand-edit.
+  - `data/reference/*.jsonl` — Stripe-sourced; hand-edit after eyeballing the source page.
   - `data/config/*.jsonl` — our config; applied to Stripe via `apply -- *`.
-  - `data/projects/<slug>/` — one dir per consumer app; `project.json` + `products.jsonl` + `prices.jsonl`.
+  - `data/projects/<slug>/` — one dir per consumer app; `project.json` + `products.jsonl` + `prices.jsonl`. The `consumer` block is the Phase 3 contract — see `docs/CONSUMERS.md`.
   - `data/launches.jsonl` — per-market-entry tracker.
-- **Every Stripe object carries `metadata.project=<slug>`** for multi-tenancy under one Stripe account. Cross-leak protection: scripts only act on objects matching the project's metadata.
-- **Runtime events flow into xs.** `scripts/handler.nu` is the http-nu handler closure. Routes append events to xs topics (`stripe.webhook.received`, `.verified`, `.invalid`). Future routes will emit `stripe.intent.*` and `stripe.api.*` events for consumer fan-out + audit.
+- **Every Stripe object carries `metadata.project=<slug>`** for multi-tenancy under one Stripe account. Cross-leak protection: scripts only act on objects matching the project's metadata. The dispatcher uses the same metadata to route a Stripe event to the right consumer.
+- **Runtime events flow into xs.** Route handlers (under `scripts/routes/`) append to xs topics. The dispatcher (`scripts/handlers/dispatcher.nu`) tails those topics and fans out.
 - **Secrets via fnox keychain.** Always use `fnox set -p keychain NAME 'value'` (the `-p keychain` is non-negotiable — without it fnox writes plaintext into `fnox.toml`).
-- **The pitchfork `http` daemon is wrapped in `fnox exec --`** so handler.nu sees `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY` for HMAC verify + API calls.
+- **Each pitchfork daemon is wrapped in `fnox exec --`** so handlers see `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`, and per-consumer signing-secret keychain items.
 
-## Where the data and the logic intersect
+## Event topics
 
-The substrate is **xs**. Every interesting thing becomes an event:
-
-```
-Stripe webhook  ──► /v1/webhook  ──► handler.nu HMAC-verifies  ──► .append xs
-Consumer RPC    ──► /v1/checkout ──► handler.nu emits intent   ──► .append xs
-                                                                       │
-                                                                       ▼
-                                                       projections (read views)
-                                                       handler subscribers (fan-out, audit)
-```
-
-Bootstrap (the apply / show / teardown layer) is declarative and one-way (JSONL → Stripe). The runtime is event-sourced — the event log is the authoritative state.
+| Topic | Emitted by | Notes |
+|---|---|---|
+| `stripe.webhook.received` | `routes/webhook.nu` | Raw POST from Stripe (pre-verify) |
+| `stripe.webhook.verified` | `routes/webhook.nu` | HMAC validated; dispatcher subscribes here |
+| `stripe.webhook.invalid` | `routes/webhook.nu` | Signature mismatch; HTTP 400 response |
+| `stripe.dispatch.attempted` | `handlers/dispatcher.nu` | About to POST to a consumer |
+| `stripe.dispatch.delivered` | `handlers/dispatcher.nu` | Consumer 2xx ack |
+| `stripe.dispatch.failed` | `handlers/dispatcher.nu` | Consumer non-2xx, network error, or missing secret |
 
 ## Required reading before changes
 
-- `docs/ADR.md` — Architecture decisions (runtime pivot, multi-project namespacing, event-substrate, etc.) — Decision 9 captures the http-nu+xs pivot.
+- `docs/ADR.md` — Architecture decisions; Decision 9 = runtime pivot, Decision 10 = consumer fan-out model.
 - `docs/SETUP.md` — Stripe account setup with country-eligibility caveats.
 - `docs/TASKS.md` — Task inventory + data-flow matrix.
+- `docs/CONSUMERS.md` — Phase 3 consumer integration contract (HMAC verify code, event_filters semantics).
 - `data/projects/README.md` — per-project layout schema.
 - `data/README.md` — reference / config / projects / launches data dictionary.
 
 ## Status
 
-End-to-end pipeline verified on http-nu+xs: 7/7 events from a `stripe trigger checkout.session.completed` fixture HMAC-verified and appended to xs as `stripe.webhook.verified`. Real prior $31.90 sandbox payment also landed end-to-end on the AU-registered account through the bootstrap + Stripe integration. Next milestones: dispatcher handler for consumer fan-out, `stripe.intent.*` events for RPC mutations, optional Cloudflare deploy via `cf:*` tasks.
+Phase 1 (bootstrap) + Phase 2 (runtime) + Phase 3 (dispatcher) all live locally. Dispatcher tails xs, signs+POSTs to per-project consumer webhooks, and records `stripe.dispatch.*` events. Real prior $31.90 sandbox payment landed end-to-end through the bootstrap + Stripe integration. Next milestones: Phase 4 deploy target (VPS or cf:*), Phase 5 first consumer (`remy-sport`) verifying signatures and processing events.

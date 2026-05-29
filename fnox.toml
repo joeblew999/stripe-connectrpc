@@ -38,3 +38,4 @@ SMP_SERVICE_URL = { provider = "keychain", value = "SMP_SERVICE_URL" }
 CLOUDFLARE_API_TOKEN  = { provider = "keychain", value = "CLOUDFLARE_API_TOKEN" }
 CLOUDFLARE_ACCOUNT_ID = { provider = "keychain", value = "CLOUDFLARE_ACCOUNT_ID" }
 SMP_WORKER_URL        = { provider = "keychain", value = "SMP_WORKER_URL" }
+SMP_STRIPE_SECRET_KEY= { provider = "keychain", value = "SMP_STRIPE_SECRET_KEY" }

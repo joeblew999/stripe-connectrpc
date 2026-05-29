@@ -4,7 +4,17 @@ Stripe Managed Payments shared service on **http-nu + xs** — nushell HTTP fron
 
 Stripe is the merchant of record — see [stripe.com/managed-payments](https://stripe.com/managed-payments). smp is the only place Stripe API keys live; consumer apps call smp for both ops actions (refund, cancel, portal) and billing-state queries. The web app never embeds Stripe.js; all user-facing payment UIs are Stripe-hosted (Checkout + Customer Portal).
 
-**Status:** end-to-end pipeline verified — Stripe → stripe listen → http-nu → HMAC verify in handler.nu → events appended to xs (`stripe.webhook.received` + `stripe.webhook.verified`). 7/7 events HMAC-verified on a real Stripe trigger fixture. The earlier $31.90 sandbox payment on the AU-registered account proves the bootstrap layer + Stripe integration; the same flow re-verified on the http-nu+xs runtime.
+## Phases
+
+| Phase | What | Status | Reference |
+|---|---|---|---|
+| **1** | Bootstrap layer — JSONL → Stripe via stripe-cli; show / apply / test / teardown verbs | ✓ done | [ADR §6](docs/ADR.md) |
+| **2** | Runtime — http-nu + xs, /v1/webhook with HMAC verify, events in xs | ✓ done | [ADR §9](docs/ADR.md) |
+| **3** | Consumer fan-out — dispatcher tails xs, signs+POSTs to consumer.webhook_url | ✓ live | [ADR §10](docs/ADR.md) · [CONSUMERS.md](docs/CONSUMERS.md) |
+| **4** | Deploy — pitchfork on a VPS supervising http-nu + stripe-listen + dispatcher | TBD | — |
+| **5** | Cross-repo wiring — first consumer (`remy-sport`) verifies HMAC, processes events | TBD | [CONSUMERS.md](docs/CONSUMERS.md) |
+
+**Verification:** real $31.90 sandbox payment on the AU-registered account flowed end-to-end (Stripe → stripe listen → http-nu → HMAC verify → xs). 7/7 events from `stripe trigger checkout.session.completed` HMAC-validated. Dispatcher (Phase 3) is running and producing `stripe.dispatch.attempted` / `.delivered` / `.failed` frames for each verified event.
 
 ## Stack
 
@@ -31,14 +41,15 @@ For a first-time Stripe account walkthrough (account country requirement, SMP ac
 ## Dev loop
 
 ```sh
-mise run dev:up           # pitchfork starts http-nu (:8787 + embedded xs) + stripe listen
-mise run dev:logs         # tail both daemons
-mise run dev:status       # which daemons are running
-mise run dev:tui          # interactive pitchfork dashboard
-mise run dev:down         # stop everything
+mise run dev:up                  # pitchfork starts http-nu (:8787 + embedded xs) + stripe listen + dispatcher
+mise run dev:logs                # tail all daemons
+mise run dev:status              # which daemons are running
+mise run dev:tui                 # interactive pitchfork dashboard
+mise run dev:down                # stop everything
 
-mise run dev:restart-http     # after editing scripts/handler.nu
-mise run dev:restart-listen   # after rotating the webhook signing secret
+mise run dev:restart-http        # after editing scripts/handler.nu or scripts/routes/*.nu
+mise run dev:restart-listen      # after rotating the webhook signing secret
+mise run dev:restart-dispatcher  # after editing scripts/handlers/dispatcher.nu or any project consumer block
 ```
 
 Inspect the event stream:
@@ -46,6 +57,14 @@ Inspect the event stream:
 mise run xs:cat                                      # all frames
 mise run xs:last -- stripe.webhook.verified          # latest of a topic
 mise run xs:append -- some.topic 'body text'         # write a test frame
+```
+
+Inspect Phase 3 dispatcher state:
+```sh
+mise run dispatch:attempted   # what smp tried to send to consumers
+mise run dispatch:delivered   # what consumers acked with 2xx
+mise run dispatch:failed      # what bounced (status + error meta)
+mise run dispatch:logs        # live dispatcher console
 ```
 
 Stripe passthroughs:
@@ -85,8 +104,6 @@ mise run test -- customer             # create a test customer
 mise run test -- checkout             # SMP-mode Checkout Session, prints URL
 mise run test -- checkout-payments    # Stripe Payments mode (we are MoR)
 mise run test -- checkout-thai        # Thai buyer (locale=th, address required)
-
-mise run data:check                   # diff data/reference/ vs upstream Stripe docs
 ```
 
 The full task → script → data matrix lives in [docs/TASKS.md](docs/TASKS.md).
@@ -126,7 +143,7 @@ Stripe Atlas would become relevant only if we wanted to additionally accept US-s
 
 ```
 data/
-├── reference/                       ← UPSTREAM Stripe docs; refresh via `data:check`
+├── reference/                       ← UPSTREAM Stripe docs; hand-edit after eyeballing source
 │   ├── countries.jsonl              # 60 rows
 │   ├── tax-codes.jsonl              # 72 rows
 │   └── tax-coverage.jsonl           # 82 rows
@@ -167,7 +184,7 @@ The architecture decision and event-substrate trade-offs are in [docs/ADR.md](do
 
 ## Cloudflare path (alternative runtime, retained for later)
 
-The Workers/wasm32 scaffold (`Cargo.toml`, `src/`, `wrangler.toml`, `scripts/worker-dev.nu`) is kept in the repo. `cf:*` tasks let you build and deploy that variant if you ever want smp behind Cloudflare's edge. Same data layer (`data/`), same bootstrap tooling — only the runtime changes.
+The Workers/wasm32 scaffold lives under `alt-runtime/cloudflare/` (`Cargo.toml`, `src/`, `wrangler.toml`, `scripts/worker-dev.nu`). `cf:*` tasks let you build and deploy that variant if you ever want smp behind Cloudflare's edge. Same data layer (`data/`), same bootstrap tooling — only the runtime changes.
 
 ```sh
 mise run cf:cargo-check       # cargo check the Workers wasm32 build
@@ -177,12 +194,13 @@ mise run cf:worker-deploy     # deploy to Cloudflare
 mise run cf:worker-secret-put # push STRIPE_* from fnox → wrangler secrets
 ```
 
-See `wrangler.toml`, `src/lib.rs`, `src/webhook.rs` for the Worker implementation.
+See `alt-runtime/cloudflare/` for the Worker implementation.
 
 ## Documentation
 
-- [docs/ADR.md](docs/ADR.md) — Architecture decisions (runtime pivot, event-substrate, multi-project model, etc.)
+- [docs/ADR.md](docs/ADR.md) — Architecture decisions (runtime pivot, event-substrate, multi-project model, consumer fan-out)
 - [docs/SETUP.md](docs/SETUP.md) — Stripe account setup walkthrough (country eligibility, API key into fnox)
 - [docs/TASKS.md](docs/TASKS.md) — Task inventory + data-flow matrix
+- [docs/CONSUMERS.md](docs/CONSUMERS.md) — Phase 3 consumer integration contract (HMAC verify, event_filters, response semantics)
 - [CLAUDE.md](CLAUDE.md) — Context for Claude sessions working in this repo
 - [data/README.md](data/README.md) — Data dictionary for reference/config/projects/launches

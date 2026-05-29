@@ -10,6 +10,12 @@
 "github:cablehead/xs" = "0.12.0"
 "github:cablehead/http-nu" = "0.16.0"
 
+# --- alternative-runtime tools (cf:* tasks only) ---
+# These let you also deploy the stripe-smp service to Cloudflare Workers.
+# Not used by the primary http-nu+xs runtime — safe to remove if you'll
+# never run cf:*. Pinned because wrangler breaks on minor bumps.
+"npm:wrangler" = "4.71.0"
+
 [env]
 # xs store path — append-only events live here. Gitignored.
 XS_STORE = "{{ config_root }}/.xs-store"
@@ -34,18 +40,22 @@ run = "nu scripts/onboard.nu"
 description = "Check toolchain + keychain entries"
 run = "nu scripts/verify.nu"
 
+[tasks."verify:all"]
+description = "Run every non-interactive mise task and report PASS/FAIL/SKIP"
+run = "nu scripts/verify.nu --all"
+
 # =============================================================================
-# dev:* — supervise the runtime daemons (xs + http-nu + stripe listen)
+# dev:* — supervise the runtime daemons (http-nu+xs + stripe listen + dispatcher)
 # config: pitchfork.toml
 # =============================================================================
 
 [tasks."dev:up"]
-description = "Start xs + http-nu + stripe-listen (auto-restart on crash)"
+description = "Start http-nu+xs + stripe-listen + dispatcher (auto-restart on crash)"
 run = "pitchfork start -l -f"
 
 [tasks."dev:down"]
 description = "Stop all daemons"
-run = "pitchfork stop http listen"
+run = "pitchfork stop http listen dispatcher"
 
 [tasks."dev:status"]
 description = "Show pitchfork daemon status"
@@ -53,19 +63,23 @@ run = "pitchfork list"
 
 [tasks."dev:logs"]
 description = "Tail logs from all daemons"
-run = "pitchfork logs http listen"
+run = "pitchfork logs http listen dispatcher"
 
 [tasks."dev:tui"]
 description = "Interactive pitchfork dashboard"
 run = "pitchfork tui"
 
 [tasks."dev:restart-http"]
-description = "Restart http-nu daemon (after handler.nu edits)"
+description = "Restart http-nu daemon (after handler.nu / routes/*.nu edits)"
 run = "pitchfork stop http ; pitchfork start http"
 
 [tasks."dev:restart-listen"]
 description = "Restart stripe-listen (after a new whsec_)"
 run = "pitchfork stop listen ; pitchfork start listen"
+
+[tasks."dev:restart-dispatcher"]
+description = "Restart dispatcher (after dispatcher.nu / project consumer block edits)"
+run = "pitchfork stop dispatcher ; pitchfork start dispatcher"
 
 # =============================================================================
 # xs:* — event store operations
@@ -81,7 +95,11 @@ run = "xs last .xs-store/sock"
 
 [tasks."xs:append"]
 description = "Append a test event — usage: mise run xs:append -- topic.name 'body'"
-run = "xs append .xs-store/sock"
+usage = '''
+arg "<topic>" help="event topic, e.g. test.verify"
+arg "[body]" help="event body (JSON string or plain text); empty if omitted" default=""
+'''
+run = 'printf "%s" "${usage_body}" | xs append .xs-store/sock "${usage_topic}"'
 
 [tasks."xs:tail"]
 description = "Tail recent events via the inspection HTTP endpoint (curl + jq)"
@@ -90,6 +108,26 @@ run = 'curl -s "http://localhost:8787/events?limit=20" | jq -c ".[] | {topic, id
 [tasks."xs:counts"]
 description = "Group recent events by topic + count (CLI inspection)"
 run = 'curl -s "http://localhost:8787/events?limit=200" | jq -r "group_by(.topic) | map({topic: .[0].topic, count: length}) | sort_by(-.count) | .[] | \"\(.count)  \(.topic)\""'
+
+# =============================================================================
+# dispatch:* — Phase 3 consumer fan-out inspection (ADR-10)
+# =============================================================================
+
+[tasks."dispatch:logs"]
+description = "Tail the dispatcher daemon (live console output)"
+run = "pitchfork logs dispatcher"
+
+[tasks."dispatch:attempted"]
+description = "Recent stripe.dispatch.attempted frames"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.attempted&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."dispatch:delivered"]
+description = "Recent stripe.dispatch.delivered frames"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.delivered&limit=20" | jq -c ".[] | {id, meta}"'
+
+[tasks."dispatch:failed"]
+description = "Recent stripe.dispatch.failed frames"
+run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.failed&limit=20" | jq -c ".[] | {id, meta}"'
 
 # =============================================================================
 # stripe:* — Stripe CLI passthroughs
@@ -109,39 +147,42 @@ run = "fnox exec -- stripe trigger checkout.session.completed"
 
 # =============================================================================
 # open:* — browser URL launchers
+# Idempotent: each task probes whether the thing it points at is already
+# configured (keychain entry present, Stripe account activated, products
+# seeded, etc.) and skips the browser open when nothing needs doing.
 # =============================================================================
 
 [tasks."open:stripe-keys"]
-description = "Stripe Dashboard → API keys (TEST mode)"
+description = "Stripe Dashboard → API keys (opens only if SMP_STRIPE_SECRET_KEY missing)"
 run = "nu scripts/open.nu stripe-keys"
 
 [tasks."open:stripe-account"]
-description = "Stripe Dashboard → Account settings"
-run = "nu scripts/open.nu stripe-account"
+description = "Stripe Dashboard → Account settings (opens only if account not yet activated)"
+run = "fnox exec -- nu scripts/open.nu stripe-account"
 
 [tasks."open:stripe-onboard"]
-description = "Stripe Dashboard → Activation onboarding"
-run = "nu scripts/open.nu stripe-onboard"
+description = "Stripe Dashboard → Activation onboarding (opens only if account not yet activated)"
+run = "fnox exec -- nu scripts/open.nu stripe-onboard"
 
 [tasks."open:stripe-smp"]
-description = "Stripe Dashboard → Managed Payments settings"
-run = "nu scripts/open.nu stripe-smp"
+description = "Stripe Dashboard → Managed Payments (opens only if account not yet activated)"
+run = "fnox exec -- nu scripts/open.nu stripe-smp"
 
 [tasks."open:stripe-webhooks"]
-description = "Stripe Dashboard → Webhooks (TEST mode)"
+description = "Stripe Dashboard → Webhooks (opens only if SMP_STRIPE_WEBHOOK_SECRET missing)"
 run = "nu scripts/open.nu stripe-webhooks"
 
 [tasks."open:stripe-payment-methods"]
-description = "Stripe Dashboard → Payment Methods"
-run = "nu scripts/open.nu stripe-payment-methods"
+description = "Stripe Dashboard → Payment Methods (opens only if no webhook endpoint registered)"
+run = "fnox exec -- nu scripts/open.nu stripe-payment-methods"
 
 [tasks."open:stripe-products"]
-description = "Stripe Dashboard → Products"
-run = "nu scripts/open.nu stripe-products"
+description = "Stripe Dashboard → Products (opens only if no project-scoped products exist)"
+run = "fnox exec -- nu scripts/open.nu stripe-products"
 
 [tasks."open:stripe-dashboard"]
-description = "Stripe Dashboard (TEST mode home)"
-run = "nu scripts/open.nu stripe-dashboard"
+description = "Stripe Dashboard (opens only if account not yet activated)"
+run = "fnox exec -- nu scripts/open.nu stripe-dashboard"
 
 # =============================================================================
 # Verb tasks — single task per verb; the subcommand is a positional arg.
@@ -184,52 +225,53 @@ arg "<slug>" help="project slug (must match data/projects/<slug>/)"
 run = 'fnox exec -- nu scripts/bootstrap.nu teardown ${usage_slug}'
 
 # =============================================================================
-# data:* — sync data/reference/ against upstream Stripe docs
+# cf:* — ALTERNATIVE RUNTIME (Cloudflare Workers).
+# Scaffold lives under alt-runtime/cloudflare/. Skip this whole section if
+# you only want the primary http-nu+xs runtime.
 # =============================================================================
 
-[tasks."data:check"]
-description = "Fetch Stripe docs, diff vs data/reference/*.jsonl"
-run = "nu scripts/data-refresh.nu check"
-
-[tasks."data:refresh"]
-description = "Apply upstream changes to data/reference/ (stub — manual edit after check)"
-run = "nu scripts/data-refresh.nu apply"
-
 [tasks."cf:cargo-check"]
-description = "cargo check the Workers wasm32 build (Cloudflare path only)"
+description = "cargo check the Workers wasm32 build (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "cargo check --target $WASM_TARGET"
 
 [tasks."cf:cargo-build"]
-description = "worker-build --release (Cloudflare path only)"
+description = "worker-build --release (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "worker-build --release"
 
 [tasks."cf:cargo-clean"]
-description = "cargo clean + remove build/"
+description = "cargo clean + remove build/ (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "cargo clean ; rm -rf build"
 
 [tasks."cf:worker-dev"]
-description = "wrangler dev locally — only if you want the Cloudflare runtime"
+description = "wrangler dev locally (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "fnox exec -- nu scripts/worker-dev.nu"
 
 [tasks."cf:worker-deploy"]
-description = "Deploy worker to Cloudflare"
+description = "Deploy worker to Cloudflare (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "fnox exec -- wrangler deploy"
 
 [tasks."cf:worker-tail"]
-description = "Tail live Cloudflare Worker logs"
+description = "Tail live Cloudflare Worker logs (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = "fnox exec -- wrangler tail"
 
 [tasks."cf:worker-secret-put"]
-description = "Push STRIPE_* secrets from fnox keychain → wrangler secrets"
+description = "Push STRIPE_* secrets from fnox keychain → wrangler secrets (alt runtime)"
+dir = "alt-runtime/cloudflare"
 run = '''
 fnox exec -- nu -c '$env.STRIPE_SECRET_KEY     | wrangler secret put STRIPE_SECRET_KEY'
 fnox exec -- nu -c '$env.STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
 '''
 
 [tasks."open:cf-tokens"]
-description = "Cloudflare → API tokens"
+description = "Cloudflare → API tokens (opens only if CLOUDFLARE_API_TOKEN missing)"
 run = "nu scripts/open.nu cf-tokens"
 
 [tasks."open:cf-account"]
-description = "Cloudflare → Dashboard (account id in sidebar)"
+description = "Cloudflare → Dashboard (opens only if CLOUDFLARE_ACCOUNT_ID missing)"
 run = "nu scripts/open.nu cf-account"

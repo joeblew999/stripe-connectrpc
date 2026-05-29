@@ -124,8 +124,66 @@ stripe.webhook.dead-letter.<consumer>  delivery failure beyond retry budget
 
 ### What's not yet built
 
-- Dispatcher handler subscribing to `stripe.webhook.verified` and fanning out to per-project `webhook_url` + per-consumer signing secret.
+- ~~Dispatcher handler subscribing to `stripe.webhook.verified` and fanning out to per-project `webhook_url` + per-consumer signing secret.~~ **DONE** — see Decision 10 + `scripts/handlers/dispatcher.nu`.
 - `/v1/checkout` route emitting `stripe.intent.session.create` and awaiting `stripe.api.session.created` reply.
 - Replay / drift detection / projections.
+- Automatic retry policy on `stripe.dispatch.failed` (currently no retry — failed events are logged but not re-driven).
 
 These are mechanical follow-ons of the event substrate, not architectural changes.
+
+## Decision 10 — Consumer fan-out model (Phase 3) — 2026-05-29
+
+**Status:** ACCEPTED 2026-05-29. Implemented in `scripts/handlers/dispatcher.nu`; supervised by pitchfork as the `dispatcher` daemon. Consumer integration contract documented in `docs/CONSUMERS.md`.
+
+### Context
+
+The runtime (Decision 9) lands verified Stripe events in xs as `stripe.webhook.verified`, tagged with `metadata.project=<slug>`. Phase 3 is delivering those events to the right consumer app (e.g. remy-sport on Workers). The `consumer` block already exists in each `data/projects/<slug>/project.json` as forward-looking schema:
+
+```json
+"consumer": {
+  "webhook_url":               "https://remy-sport.example/_internal/stripe-smp",
+  "signing_secret_keychain":   "REMY_SPORT_SMP_WEBHOOK_SECRET",
+  "bearer_token_keychain":     "REMY_SPORT_SMP_BEARER_TOKEN",
+  "event_filters":             ["checkout.session.completed", "invoice.paid"]
+}
+```
+
+No code reads it yet. We need to pick the delivery mechanism.
+
+### Options
+
+**A. Webhook push (smp → consumer HTTP POST).** Dispatcher subscribes to xs, signs each event with the consumer's HMAC secret, POSTs to `consumer.webhook_url`. Retries with exponential backoff stored back into xs as `stripe.dispatch.*` events. Consumer can run anywhere (CF Worker, Vercel, Fly, Hetzner). Same auth pattern Stripe uses with us — consumers learn HMAC verify once.
+
+**B. xs subscription (consumer reads xs directly).** Consumer process opens a long-lived connection to smp's xs (UDS locally, TCP across hosts) and subscribes filtered by `metadata.project=<slug>`. Zero retry logic on smp. Requires the consumer to be co-located with — or have network reachability to — smp's xs. Couples consumers to xs as a public-ish API surface.
+
+**C. ConnectRPC server-stream (smp.Subscribe).** Consumer calls `smp.Subscribe({project, since_id})` over ConnectRPC, gets a typed server-stream of intents/events. smp implements the stream by tailing xs. Plays well with `connectrpc-cedar`. Long-lived HTTP/2 connections.
+
+### Decision
+
+**Pick A (webhook push), dual-emit to xs.** The dispatcher subscribes to `stripe.webhook.verified`, signs+POSTs to each project's `consumer.webhook_url`, and appends the dispatch attempt (success or failure) as `stripe.dispatch.attempted` / `.delivered` / `.failed` events back to xs. xs remains the authoritative log; HTTP push is the delivery transport.
+
+### Why A over B and C
+
+- **Phase 5 reality:** consumer apps (remy-sport, etc.) will run on Workers / Fly / Vercel — not co-located with smp. Option B is dead on arrival across the WAN. Option C works but requires a per-language SDK + long-lived stream management.
+- **Failure modes are familiar:** HTTP webhook push is the pattern Stripe → smp already uses. We invert it for smp → consumer. Same retry/idempotency/HMAC verify code on the consumer side.
+- **xs stays internal:** option B leaks xs as a public surface, which constrains us to xs's wire protocol forever. Webhook push keeps the contract at HTTP+HMAC+JSON.
+- **Dual-emit gives audit + replay for free:** the same xs we use as substrate becomes the dispatch log. `stripe.dispatch.failed` events with consumer 5xx + attempt count are the retry queue. Re-running the dispatcher tails from the last `.delivered` SCRU128.
+
+### What this commits us to
+
+- A new handler subscriber: `scripts/handlers/dispatcher.nu` (or wherever we land after splitting handler.nu). Subscribes to `stripe.webhook.verified`, iterates registered projects, filters by `event_filters`, posts.
+- Per-project keychain item lookup at dispatch time: `fnox get $project.consumer.signing_secret_keychain`. Cross-repo contract per `feedback-fnox-cross-repo-contract`.
+- A retry policy: 3 attempts with 1s / 30s / 5min backoff, then dead-letter as `stripe.dispatch.dead-lettered`. Backoff state lives in xs metadata.
+- A consumer-side verify helper (eventual): publish a small Rust/TS snippet showing the HMAC verify so consumers don't reinvent.
+- No persistent queue infrastructure (Redis / CF Queues / NATS). xs IS the queue.
+
+### What this rules out
+
+- B and C above. If a future consumer truly needs streaming (live dashboard tail), C can be added on top of A — the events are already in xs.
+- Polling the dispatcher externally — the dispatcher is xs-subscriber-driven.
+
+### Open questions deferred to implementation
+
+- Concurrent dispatch fan-out per project (one connection at a time vs. many) — start with one, add concurrency only if observed latency demands it.
+- Exact backoff curve — pick from operating Stripe → us numbers, not theory.
+- Per-event-type filtering granularity — the `event_filters` array suggests exact `event.type` match. Wildcards later if needed.

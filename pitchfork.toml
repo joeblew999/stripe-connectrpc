@@ -1,4 +1,4 @@
-# Pitchfork supervises the two runtime daemons.
+# Pitchfork supervises the three runtime daemons.
 #
 # Start them all:   mise run dev:up
 # Watch logs:       mise run dev:logs
@@ -9,7 +9,8 @@
 # http-nu IS the HTTP server AND the event store. The --store flag makes it
 # embed cross.stream; handler.nu uses .cat / .append / .last natively. The
 # --services flag exposes the store via UDS at .xs-store/sock so external
-# `xs` CLI invocations (mise run xs:cat etc) can read/write the same store.
+# `xs` CLI invocations (mise run xs:cat etc) AND the dispatcher daemon can
+# read/write the same store.
 #
 # fnox exec wraps the daemon so STRIPE_WEBHOOK_SECRET (and friends) are in
 # scope for the handler — needed for HMAC verification of inbound webhooks.
@@ -23,3 +24,10 @@ output = "Listening on"
 run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
 auto_restart = true
 output = "Ready! Your webhook signing secret"
+
+[daemons.dispatcher]
+# Phase 3 consumer fan-out (ADR-10). Tails xs for stripe.webhook.verified
+# and POSTs HMAC-signed events to each consumer's webhook_url.
+# fnox exec gives fnox access to the per-project signing secret keychain items.
+run = "fnox exec -- nu scripts/handlers/dispatcher.nu"
+auto_restart = true
