@@ -45,15 +45,26 @@ For a first-time Stripe account walkthrough (account country requirement, SMP ac
 
 ## Dev loop
 
+Two long-running daemons (`wrangler dev` + `stripe listen`) are supervised by [pitchfork](https://github.com/jdx/pitchfork) — config in `pitchfork.toml`. One command starts both, auto-restart on crash (DNS blips, etc.).
+
 ```sh
-mise run cargo:check        # type-check against wasm32
-mise run worker:dev         # wrangler dev — auto-regens .dev.vars from fnox keychain
+mise run dev:up         # start worker + stripe listen
+mise run dev:logs       # tail both
+mise run dev:status     # which are running
+mise run dev:tui        # interactive dashboard
+mise run dev:down       # stop both
 ```
 
-Webhooks (separate terminals):
+Single-daemon control:
 ```sh
-mise run stripe:listen              # forward Stripe webhooks to localhost:8787/v1/webhook
-mise run stripe:trigger-completed   # send a synthetic checkout.session.completed
+mise run dev:restart-worker   # after editing src/ or .dev.vars
+mise run dev:restart-listen   # after rotating the webhook signing secret
+```
+
+Other:
+```sh
+mise run cargo:check                # type-check against wasm32
+mise run stripe:trigger-completed   # synthetic checkout.session.completed
 ```
 
 ## Stripe-side bootstrap (one-time per account)
@@ -69,24 +80,22 @@ All idempotent — re-running tags any missing `metadata.project=<slug>` on exis
 
 ## End-to-end sandbox payment (Human-in-the-loop, verified working)
 
-Three terminals (Stripe test mode):
+One supervised pair + one shell for the checkout (Stripe test mode):
 
 ```sh
-# T1 — local Worker
-mise run worker:dev
-
-# T2 — forward Stripe webhooks → localhost:8787/v1/webhook
-mise run stripe:listen
-#   ▸ prints `whsec_...` on first run; capture into keychain:
+mise run dev:up
+#   ▸ pitchfork starts wrangler dev (:8787) + stripe listen
+#   ▸ first run: copy printed whsec_ into the keychain:
 #       fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_...'
-#   ▸ restart T1 so it re-materializes .dev.vars
+#       mise run dev:restart-worker   # so .dev.vars regenerates
 
-# T3 — create a real Checkout Session URL (SMP mode)
-mise run test:checkout         # default: sports_coach_monthly_usd (Remy Sport)
+mise run test:checkout
+#   ▸ default lookup_key: sports_coach_monthly_usd (Remy Sport)
 #   ▸ prints checkout.stripe.com/c/pay/... URL
 #   ▸ open in browser, pay with test card 4242 4242 4242 4242
-#   ▸ T1 logs ~12 events: customer.created, customer.subscription.created,
-#     invoice.paid, payment_intent.succeeded, checkout.session.completed, …
+#   ▸ mise run dev:logs  → shows ~12 events:
+#     customer.created, customer.subscription.created, invoice.paid,
+#     payment_intent.succeeded, checkout.session.completed, …
 #     all HMAC-verified and acked 200 by smp.
 ```
 
