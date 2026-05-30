@@ -3,7 +3,7 @@
 # Stripe Checkout Session create → 201 with session URL. Also probes the 401
 # rejection path so the auth wall is provably alive.
 #
-# Usage:  mise run test -- rpc-checkout [lookup_key]
+# Usage:  mise run test:rpc-checkout [lookup_key]
 #
 # Side effects (visible via mise run rpc:*):
 #   stripe.intent.session.create   (audit, post-auth)

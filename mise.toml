@@ -1,7 +1,7 @@
 [tools]
 "aqua:jdx/pitchfork" = "latest"
 "aqua:nushell/nushell" = "0.112.2"
-"aqua:stripe/stripe-cli" = "1.42.0"
+"aqua:stripe/stripe-cli" = "1.42.1"
 
 # Runtime stack — cablehead's tools, installed from GitHub releases:
 #   xs       = event store (single daemon, append-only stream)
@@ -11,86 +11,244 @@
 "github:cablehead/http-nu" = "0.16.0"
 
 # --- alternative-runtime tools (cf:* tasks only) ---
-# These let you also deploy the stripe-smp service to Cloudflare Workers.
-# Not used by the primary http-nu+xs runtime — safe to remove if you'll
+# Lets you also deploy the stripe-smp service to Cloudflare Workers.
+# Not used by the primary http-nu+xs runtime; safe to remove if you'll
 # never run cf:*. Pinned because wrangler breaks on minor bumps.
 "npm:wrangler" = "4.71.0"
 
 [env]
-# xs store path — append-only events live here. Gitignored.
-XS_STORE = "{{ config_root }}/.xs-store"
-# http-nu listen address.
-HTTP_NU_ADDR = "127.0.0.1:8787"
-# wasm32 target for the Cloudflare path (cf:cargo-* tasks only).
-WASM_TARGET = "wasm32-unknown-unknown"
+XS_STORE      = "{{ config_root }}/.xs-store"
+HTTP_NU_ADDR  = "127.0.0.1:8787"
+WASM_TARGET   = "wasm32-unknown-unknown"
 
 # =============================================================================
-# bootstrap — first-time setup
+# Naming convention: every task is `<noun>:<verb>` so paired operations
+# (e.g. stripe:bootstrap ↔ stripe:teardown, daemons:up ↔ daemons:down) read
+# obviously together in `mise tasks`. The eight noun groups:
+#
+#   tools:*     — toolchain + secrets
+#   daemons:*   — pitchfork runtime supervision
+#   stripe:*    — Stripe-side state (push/pull/inspect)
+#   data:*      — local JSONL inspection
+#   test:*      — sandbox HIL flows
+#   xs:*        — event store ops
+#   dispatch:*  — outbound consumer fan-out (Phase 3 audit)
+#   rpc:*       — inbound consumer-RPC (POST /v1/checkout audit)
+#   open:*      — idempotent browser launchers
+#   cf:*        — alternative runtime (Cloudflare Workers; alt-runtime/)
 # =============================================================================
 
-[tasks."mise:install"]
+# =============================================================================
+# tools:* — toolchain installation + secret onboarding + sanity checks
+# =============================================================================
+
+[tasks."tools:install"]
 description = "Install all CLI tools declared in [tools]"
 run = "mise install"
 
-[tasks."onboard"]
+[tasks."tools:onboard"]
 description = "Interactive: collect Stripe creds, store in macOS keychain via fnox"
 run = "nu scripts/onboard.nu"
 
-[tasks."verify"]
+[tasks."tools:verify"]
 description = "Check toolchain + keychain entries"
 run = "nu scripts/verify.nu"
 
-[tasks."verify:all"]
+[tasks."tools:verify-all"]
 description = "Run every non-interactive mise task and report PASS/FAIL/SKIP"
 run = "nu scripts/verify.nu --all"
 
 # =============================================================================
-# dev:* — supervise the runtime daemons (http-nu+xs + stripe listen + dispatcher)
-# config: pitchfork.toml
+# daemons:* — pitchfork supervises 4 runtime daemons (config: pitchfork.toml)
+#   http             = http-nu+xs (HTTP server + embedded event store)
+#   listen           = stripe-cli forwarding Stripe → localhost:8787/v1/webhook
+#   dispatcher       = tails xs verified events, POSTs to consumer webhooks
+#   dispatch-retry   = re-attempts due retries on Stripe-style backoff
 # =============================================================================
 
-[tasks."dev:up"]
-description = "Start http-nu+xs + stripe-listen + dispatcher + dispatch-retry (auto-restart on crash)"
-run = "pitchfork start -l -f"
+[tasks."daemons:up"]
+description = "Start all 4 daemons (silent; use daemons:logs to tail)"
+run = "pitchfork start -l"
 
-[tasks."dev:down"]
-description = "Stop all daemons"
+[tasks."daemons:down"]
+description = "Stop all 4 daemons"
 run = "pitchfork stop http listen dispatcher dispatch-retry"
 
-[tasks."dev:status"]
+[tasks."daemons:status"]
 description = "Show pitchfork daemon status"
 run = "pitchfork list"
 
-[tasks."dev:logs"]
-description = "Tail logs from all daemons"
+[tasks."daemons:logs"]
+description = "Tail logs from all 4 daemons"
 run = "pitchfork logs http listen dispatcher dispatch-retry"
 
-[tasks."dev:tui"]
+[tasks."daemons:tui"]
 description = "Interactive pitchfork dashboard"
 run = "pitchfork tui"
 
-[tasks."dev:restart-http"]
-description = "Restart http-nu daemon (after handler.nu / routes/*.nu edits)"
+[tasks."daemons:restart-http"]
+description = "Restart http-nu (after handler.nu / routes/*.nu edits)"
 run = "pitchfork stop http ; pitchfork start http"
 
-[tasks."dev:restart-listen"]
+[tasks."daemons:restart-listen"]
 description = "Restart stripe-listen (after a new whsec_)"
 run = "pitchfork stop listen ; pitchfork start listen"
 
-[tasks."dev:restart-dispatcher"]
-description = "Restart dispatcher (after dispatcher.nu / lib.nu / project consumer block edits)"
+[tasks."daemons:restart-dispatcher"]
+description = "Restart dispatcher (after dispatcher.nu / lib.nu / project consumer-block edits)"
 run = "pitchfork stop dispatcher ; pitchfork start dispatcher"
 
-[tasks."dev:restart-dispatch-retry"]
-description = "Restart dispatch-retry daemon (after dispatch-retry.nu / lib.nu edits)"
+[tasks."daemons:restart-dispatch-retry"]
+description = "Restart dispatch-retry (after dispatch-retry.nu / lib.nu edits)"
 run = "pitchfork stop dispatch-retry ; pitchfork start dispatch-retry"
+
+# =============================================================================
+# stripe:* — Stripe-side state (push/pull/inspect)
+#   stripe:bootstrap    push EVERY data/ JSONL into your Stripe account
+#   stripe:teardown     archive EVERY project's products + prices
+# =============================================================================
+
+[tasks."stripe:bootstrap"]
+description = "Push data/ to Stripe: products + prices + portal + payment-methods + webhook (idempotent)"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply all'
+
+[tasks."stripe:teardown"]
+description = "Archive every project's products + prices on Stripe (reverse of stripe:bootstrap)"
+run = 'fnox exec -- nu scripts/bootstrap.nu teardown all'
+
+[tasks."stripe:apply-products"]
+description = "Upsert products to Stripe from data/projects/*/products.jsonl"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply products'
+
+[tasks."stripe:apply-prices"]
+description = "Upsert prices to Stripe from data/projects/*/prices.jsonl"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply prices'
+
+[tasks."stripe:apply-portal"]
+description = "Configure Stripe Customer Portal from data/config/portal-config.jsonl"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply portal'
+
+[tasks."stripe:apply-payment-methods"]
+description = "Reconcile Stripe payment_method_configuration from data/config/payment-methods.jsonl"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply payment-methods'
+
+[tasks."stripe:apply-webhook"]
+description = "Register a Stripe webhook endpoint at SMP_SERVICE_URL (warn-skipped if unset)"
+run = 'fnox exec -- nu scripts/bootstrap.nu apply webhook'
+
+[tasks."stripe:teardown-project"]
+description = "Archive ONE project's products + prices — usage: mise run stripe:teardown-project -- <slug>"
+usage = '''
+arg "<slug>" help="project slug (must match data/projects/<slug>/)"
+'''
+run = 'fnox exec -- nu scripts/bootstrap.nu teardown ${usage_slug}'
+
+[tasks."stripe:account"]
+description = "Stripe account snapshot (mode/country/capabilities)"
+run = 'fnox exec -- nu scripts/bootstrap.nu show account'
+
+[tasks."stripe:status"]
+description = "Stripe-side snapshot: webhooks + products + prices + portal"
+run = 'fnox exec -- nu scripts/bootstrap.nu show status'
+
+[tasks."stripe:payment-methods"]
+description = "Read live state of the account's default payment_method_configuration"
+run = 'fnox exec -- nu scripts/bootstrap.nu show payment-methods'
+
+[tasks."stripe:login"]
+description = "Pair stripe-cli with your Stripe account (browser)"
+run = "stripe login"
+
+[tasks."stripe:listen"]
+description = "Forward Stripe webhooks to local http-nu (used by pitchfork's 'listen' daemon)"
+run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
+
+[tasks."stripe:trigger-completed"]
+description = "Trigger a synthetic checkout.session.completed event for testing"
+run = "fnox exec -- stripe trigger checkout.session.completed"
+
+# =============================================================================
+# data:* — local JSONL inspection (no Stripe round-trip)
+# =============================================================================
+
+[tasks."data:scan"]
+description = "Summary of every JSONL under data/ (row counts + groupings)"
+run = 'nu scripts/bootstrap.nu show scan'
+
+[tasks."data:projects"]
+description = "Registered consumer projects (data/projects/*/project.json)"
+run = 'nu scripts/bootstrap.nu show projects'
+
+[tasks."data:countries"]
+description = "60 jurisdictions grouped by region (seller modes + buyer blocks)"
+run = 'nu scripts/bootstrap.nu show countries'
+
+[tasks."data:country"]
+description = "One country's mode availability — usage: mise run data:country -- AU"
+usage = '''
+arg "<iso>" help="ISO 3166-1 alpha-2 (e.g. AU, US, TH)"
+'''
+run = 'nu scripts/bootstrap.nu show country ${usage_iso}'
+
+[tasks."data:tax-codes"]
+description = "72 SMP-eligible product tax codes grouped by category"
+run = 'nu scripts/bootstrap.nu show tax-codes'
+
+[tasks."data:tax-coverage"]
+description = "82 buyer countries Stripe handles tax for under SMP"
+run = 'nu scripts/bootstrap.nu show tax-coverage'
+
+[tasks."data:tax"]
+description = "One buyer country's tax coverage — usage: mise run data:tax -- TH"
+usage = '''
+arg "<iso>" help="ISO 3166-1 alpha-2 (e.g. TH, DE, US)"
+'''
+run = 'nu scripts/bootstrap.nu show tax ${usage_iso}'
+
+[tasks."data:launches"]
+description = "Per (project × country × mode) market-entry tracker"
+run = 'nu scripts/bootstrap.nu show launches'
+
+[tasks."data:flow"]
+description = "End-to-end setup + dev loop walkthrough"
+run = 'nu scripts/bootstrap.nu show flow'
+
+# =============================================================================
+# test:* — sandbox HIL flows. Each emits real Stripe API calls in TEST mode.
+# =============================================================================
+
+[tasks."test:customer"]
+description = "Create a Stripe test customer"
+run = 'fnox exec -- nu scripts/bootstrap.nu test customer'
+
+[tasks."test:checkout"]
+description = "SMP-mode Checkout Session — prints URL (pay with 4242…). Usage: mise run test:checkout -- [lookup_key]"
+usage = '''
+arg "[lookup_key]" help="default: sports_coach_monthly_usd" default=""
+'''
+run = 'fnox exec -- nu scripts/bootstrap.nu test checkout "${usage_lookup_key}"'
+
+[tasks."test:checkout-payments"]
+description = "Stripe Payments mode session (we are MoR). Usage: mise run test:checkout-payments -- [lookup_key]"
+usage = '''
+arg "[lookup_key]" help="default: sports_coach_monthly_usd" default=""
+'''
+run = 'fnox exec -- nu scripts/bootstrap.nu test checkout-payments "${usage_lookup_key}"'
+
+[tasks."test:checkout-thai"]
+description = "Thai buyer flow (locale=th, address required)"
+run = 'fnox exec -- nu scripts/bootstrap.nu test checkout-thai'
+
+[tasks."test:rpc-checkout"]
+description = "POST /v1/checkout smoke test (201 happy path + two 401 auth-wall probes)"
+run = 'fnox exec -- nu scripts/bootstrap.nu test rpc-checkout'
 
 # =============================================================================
 # xs:* — event store operations
 # =============================================================================
 
 [tasks."xs:cat"]
-description = "Cat the event stream (via UDS — http-nu hosts it)"
+description = "Cat the entire event stream (via UDS — http-nu hosts it)"
 run = "xs cat .xs-store/sock"
 
 [tasks."xs:last"]
@@ -101,12 +259,12 @@ run = "xs last .xs-store/sock"
 description = "Append a test event — usage: mise run xs:append -- topic.name 'body'"
 usage = '''
 arg "<topic>" help="event topic, e.g. test.verify"
-arg "[body]" help="event body (JSON string or plain text); empty if omitted" default=""
+arg "[body]"  help="event body (JSON string or plain text); empty if omitted" default=""
 '''
 run = 'printf "%s" "${usage_body}" | xs append .xs-store/sock "${usage_topic}"'
 
 [tasks."xs:tail"]
-description = "Tail recent events via the inspection HTTP endpoint (curl + jq)"
+description = "Tail last 20 events via the inspection HTTP endpoint (curl + jq)"
 run = 'curl -s "http://localhost:8787/events?limit=20" | jq -c ".[] | {topic, id, meta}"'
 
 [tasks."xs:counts"]
@@ -114,7 +272,8 @@ description = "Group recent events by topic + count (CLI inspection)"
 run = 'curl -s "http://localhost:8787/events?limit=200" | jq -r "group_by(.topic) | map({topic: .[0].topic, count: length}) | sort_by(-.count) | .[] | \"\(.count)  \(.topic)\""'
 
 # =============================================================================
-# dispatch:* — Phase 3 consumer fan-out inspection (ADR-10)
+# dispatch:* — Phase 3 outbound consumer fan-out audit (ADR-10)
+#   Pairs:  .attempted ↔ .delivered (success) | .failed → .retry → .dead-lettered (giving up)
 # =============================================================================
 
 [tasks."dispatch:logs"]
@@ -126,7 +285,7 @@ description = "Recent stripe.dispatch.attempted frames"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.attempted&limit=20" | jq -c ".[] | {id, meta}"'
 
 [tasks."dispatch:delivered"]
-description = "Recent stripe.dispatch.delivered frames"
+description = "Recent stripe.dispatch.delivered frames (consumer 2xx)"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.delivered&limit=20" | jq -c ".[] | {id, meta}"'
 
 [tasks."dispatch:failed"]
@@ -142,15 +301,15 @@ description = "Recent stripe.dispatch.dead-lettered frames (gave up after MAX_AT
 run = 'curl -s "http://localhost:8787/events?topic=stripe.dispatch.dead-lettered&limit=20" | jq -c ".[] | {id, meta}"'
 
 # =============================================================================
-# rpc:* — Consumer-RPC inspection (POST /v1/checkout audit trail)
+# rpc:* — Inbound consumer-RPC audit (POST /v1/checkout) (ADR-11)
 # =============================================================================
 
 [tasks."rpc:intent"]
-description = "Recent stripe.intent.session.create frames (authenticated consumer requests)"
+description = "Recent stripe.intent.session.create frames (authenticated requests)"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.intent.session.create&limit=20" | jq -c ".[] | {id, meta}"'
 
 [tasks."rpc:created"]
-description = "Recent stripe.api.session.created frames (Stripe returned a checkout URL)"
+description = "Recent stripe.api.session.created frames (Stripe returned a URL)"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.api.session.created&limit=20" | jq -c ".[] | {id, meta}"'
 
 [tasks."rpc:failed"]
@@ -158,26 +317,9 @@ description = "Recent stripe.api.session.failed frames"
 run = 'curl -s "http://localhost:8787/events?topic=stripe.api.session.failed&limit=20" | jq -c ".[] | {id, meta}"'
 
 # =============================================================================
-# stripe:* — Stripe CLI passthroughs
-# =============================================================================
-
-[tasks."stripe:login"]
-description = "Pair stripe-cli with your Stripe account (browser)"
-run = "stripe login"
-
-[tasks."stripe:listen"]
-description = "Forward Stripe webhooks to local http-nu (used by pitchfork's 'listen' daemon)"
-run = "fnox exec -- stripe listen --forward-to http://localhost:8787/v1/webhook"
-
-[tasks."stripe:trigger-completed"]
-description = "Trigger a test checkout.session.completed event"
-run = "fnox exec -- stripe trigger checkout.session.completed"
-
-# =============================================================================
-# open:* — browser URL launchers
-# Idempotent: each task probes whether the thing it points at is already
-# configured (keychain entry present, Stripe account activated, products
-# seeded, etc.) and skips the browser open when nothing needs doing.
+# open:* — Idempotent browser launchers. Each probes whether the thing it
+# points at is already configured (keychain entry present, Stripe account
+# activated, etc.) and SKIPS the browser open when nothing needs doing.
 # =============================================================================
 
 [tasks."open:stripe-keys"]
@@ -212,45 +354,13 @@ run = "fnox exec -- nu scripts/open.nu stripe-products"
 description = "Stripe Dashboard (opens only if account not yet activated)"
 run = "fnox exec -- nu scripts/open.nu stripe-dashboard"
 
-# =============================================================================
-# Verb tasks — single task per verb; the subcommand is a positional arg.
-# Examples:
-#   mise run show -- projects
-#   mise run show -- country AU
-#   mise run apply -- products
-#   mise run test -- checkout sports_coach_monthly_usd
-#   mise run teardown -- demo-app
-# =============================================================================
+[tasks."open:cf-tokens"]
+description = "Cloudflare → API tokens (opens only if CLOUDFLARE_API_TOKEN missing)"
+run = "nu scripts/open.nu cf-tokens"
 
-[tasks.show]
-description = "Read-only display — usage: mise run show -- <what> [arg]"
-usage = '''
-arg "<what>" help="account | status | countries | country | tax-codes | tax-coverage | tax | launches | projects | payment-methods | scan | flow"
-arg "[arg]" help="optional arg (e.g. ISO code for country/tax)" default=""
-'''
-run = 'fnox exec -- nu scripts/bootstrap.nu show ${usage_what} "${usage_arg}"'
-
-[tasks.apply]
-description = "Apply intent to Stripe (idempotent) — usage: mise run apply -- <what>"
-usage = '''
-arg "<what>" help="products | prices | portal | webhook | payment-methods | all"
-'''
-run = 'fnox exec -- nu scripts/bootstrap.nu apply ${usage_what}'
-
-[tasks.test]
-description = "Sandbox HIL flows — usage: mise run test -- <flow> [arg]"
-usage = '''
-arg "<flow>" help="customer | checkout | checkout-payments | checkout-thai | rpc-checkout"
-arg "[arg]" help="optional lookup_key for checkout flows" default=""
-'''
-run = 'fnox exec -- nu scripts/bootstrap.nu test ${usage_flow} "${usage_arg}"'
-
-[tasks.teardown]
-description = "Archive a project's products + prices — usage: mise run teardown -- <slug>"
-usage = '''
-arg "<slug>" help="project slug (must match data/projects/<slug>/)"
-'''
-run = 'fnox exec -- nu scripts/bootstrap.nu teardown ${usage_slug}'
+[tasks."open:cf-account"]
+description = "Cloudflare → Dashboard (opens only if CLOUDFLARE_ACCOUNT_ID missing)"
+run = "nu scripts/open.nu cf-account"
 
 # =============================================================================
 # cf:* — ALTERNATIVE RUNTIME (Cloudflare Workers).
@@ -295,11 +405,3 @@ run = '''
 fnox exec -- nu -c '$env.STRIPE_SECRET_KEY     | wrangler secret put STRIPE_SECRET_KEY'
 fnox exec -- nu -c '$env.STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
 '''
-
-[tasks."open:cf-tokens"]
-description = "Cloudflare → API tokens (opens only if CLOUDFLARE_API_TOKEN missing)"
-run = "nu scripts/open.nu cf-tokens"
-
-[tasks."open:cf-account"]
-description = "Cloudflare → Dashboard (opens only if CLOUDFLARE_ACCOUNT_ID missing)"
-run = "nu scripts/open.nu cf-account"

@@ -36,7 +36,7 @@ Stripe-side state (webhook endpoints, products, prices) bootstrapped via [stripe
 
 ### 7. Secrets: fnox → keychain → mise
 
-Per-repo `fnox.toml` maps env var names to keychain items. `mise run onboard` populates interactively. `fnox exec --` injects env vars for any Stripe-touching command. For the alt-runtime `cf:*` path, `scripts/worker-dev.nu` additionally materializes `.dev.vars` from fnox for `wrangler dev`.
+Per-repo `fnox.toml` maps env var names to keychain items. `mise run tools:onboard` populates interactively. `fnox exec --` injects env vars for any Stripe-touching command. For the alt-runtime `cf:*` path, `scripts/worker-dev.nu` additionally materializes `.dev.vars` from fnox for `wrangler dev`.
 
 ### 8. Multi-project model: directory + metadata, single Stripe account
 
@@ -52,7 +52,7 @@ SMP eligibility is **strictly narrower** than general Stripe availability. Sourc
 - **Tax coverage:** 82 buyer countries Stripe handles VAT/GST for — `tax-coverage.jsonl`. Carve-outs: JP (all domestic), SG (B2B domestic).
 - **Other:** direct integrations only (no Connect platforms / Express accounts), fully automated digital products (no human-in-loop coaching).
 
-If the Stripe account is in a non-SMP country, the options are (a) register in a supported country, (b) drop to regular Stripe Payments (we become MoR, we handle tax), (c) wait. `mise run show -- account` reports the account country; `mise run show -- country <ISO>` shows what modes work for any country.
+If the Stripe account is in a non-SMP country, the options are (a) register in a supported country, (b) drop to regular Stripe Payments (we become MoR, we handle tax), (c) wait. `mise run stripe:account` reports the account country; `mise run data:country -- <ISO>` shows what modes work for any country.
 
 ## Decision 9 — Runtime: http-nu + xs — 2026-05-29
 

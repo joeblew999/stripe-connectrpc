@@ -80,10 +80,14 @@ def main [
         }
         "teardown" => {
             if ($sub | is-empty) {
-                print "✗ teardown requires a project slug — usage: nu bootstrap.nu teardown <slug>"
+                print "✗ teardown requires a project slug or 'all' — usage: nu bootstrap.nu teardown <slug|all>"
                 exit 1
             }
-            teardown_project $sub
+            if $sub == "all" {
+                teardown_all
+            } else {
+                teardown_project $sub
+            }
         }
         _ => {
             print $"unknown verb: ($verb)"

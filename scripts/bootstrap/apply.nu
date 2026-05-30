@@ -179,7 +179,7 @@ export def register_webhook [] {
         print "  ⊘ webhook step skipped — SMP_SERVICE_URL not in keychain (Phase 4)"
         print "    Deploy http-nu+xs to a VPS, then:"
         print "      fnox set -p keychain SMP_SERVICE_URL 'https://smp.example.com'"
-        print "      mise run apply -- webhook"
+        print "      mise run stripe:apply-webhook"
         return
     }
     let endpoint = $"(($url_r.stdout | str trim))/v1/webhook"
@@ -208,7 +208,7 @@ export def register_webhook [] {
         print "✓ created."
         print "  Capture `whsec_...` from output above and run:"
         print "    fnox set -p keychain SMP_STRIPE_WEBHOOK_SECRET 'whsec_...'"
-        print "    mise run dev:restart-http"
+        print "    mise run daemons:restart-http"
     } else {
         print "✗ stripe webhook_endpoints create failed:"
         print $r.stdout

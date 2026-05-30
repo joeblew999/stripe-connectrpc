@@ -48,7 +48,7 @@ def main [
         "stripe-products": {
             url: "https://dashboard.stripe.com/test/products",
             needed: {|| needs_stripe_products },
-            already: "Stripe products already seeded — re-apply with `mise run apply -- products`"
+            already: "Stripe products already seeded — re-apply with `mise run stripe:apply-products`"
         }
         "stripe-customers": {
             url: "https://dashboard.stripe.com/test/customers",

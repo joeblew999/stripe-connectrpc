@@ -49,7 +49,7 @@ print "\n[1/2] Stripe (required) ----------------"
 
 ensure_secret "SMP_STRIPE_SECRET_KEY" "Stripe secret key (sk_test_... for now)" "Click 'Reveal test key' next to the Secret key row" "https://dashboard.stripe.com/test/apikeys"
 
-ensure_secret "SMP_STRIPE_WEBHOOK_SECRET" "Stripe webhook signing secret (whsec_...)" "Skip for now — mise run dev:up prints one on first run via stripe listen" ""
+ensure_secret "SMP_STRIPE_WEBHOOK_SECRET" "Stripe webhook signing secret (whsec_...)" "Skip for now — mise run daemons:up prints one on first run via stripe listen" ""
 
 # --- optional ---
 print "\n[2/2] Cloudflare (optional — only for the cf:* alt runtime) ----------------"
@@ -59,4 +59,4 @@ ensure_secret "CLOUDFLARE_API_TOKEN" "Cloudflare API token" "Create a token with
 ensure_secret "CLOUDFLARE_ACCOUNT_ID" "Cloudflare account ID" "Right sidebar of any account page in the CF dashboard" "https://dash.cloudflare.com"
 
 print "\nDone."
-print "Next: mise run verify  →  mise run dev:up  →  mise run test -- checkout"
+print "Next: mise run tools:verify  →  mise run stripe:bootstrap  →  mise run daemons:up  →  mise run test:checkout"

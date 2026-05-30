@@ -9,6 +9,24 @@
 
 use lib.nu *
 
+export def teardown_all [] {
+    let projects = (list_projects)
+    if ($projects | length) == 0 {
+        print "no projects found in data/projects/"
+        return
+    }
+    print $"=== teardown all (($projects | length)) projects ==="
+    print ""
+    for p in $projects {
+        teardown_project $p.slug
+        print ""
+    }
+    print "All projects torn down."
+    print "Note: portal config + payment-methods config + webhook endpoint remain"
+    print "  on the Stripe account — those are account-wide, not per-project."
+    print "  To restore: mise run stripe:bootstrap"
+}
+
 export def teardown_project [slug: string] {
     let proj_dir = ([("data/projects") $slug] | path join)
     let proj_json = ([$proj_dir "project.json"] | path join)
@@ -82,5 +100,5 @@ export def teardown_project [slug: string] {
     }
 
     print ""
-    print "  Done. To restore: mise run apply -- products — re-activates archived items."
+    print "  Done. To restore: mise run stripe:apply-products — re-activates archived items."
 }

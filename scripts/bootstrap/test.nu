@@ -44,7 +44,7 @@ export def test_checkout [lookup_key: string, mode: string] {
     let prices = ($listing.stdout | from json | get data)
     if ($prices | length) == 0 {
         print $"✗ no price found for lookup_key=($lookup_key)"
-        print "  Run: mise run apply -- prices"
+        print "  Run: mise run stripe:apply-prices"
         exit 1
     }
     let price_id = ($prices | first | get id)
@@ -93,7 +93,7 @@ export def test_checkout [lookup_key: string, mode: string] {
             print "  If 'managed_payments not enabled' — Stripe Managed Payments isn't"
             print "  activated on the account yet. Either enable it in the dashboard"
             print "  (mise run open:stripe-smp) or use the Payments-mode fallback:"
-            print "    mise run test -- checkout-payments"
+            print "    mise run test:checkout-payments"
         }
         exit 1
     }
@@ -110,7 +110,7 @@ export def test_checkout [lookup_key: string, mode: string] {
     print $"  ($session_url)"
     print ""
     print "Test card: 4242 4242 4242 4242 — any future expiry, any CVC, any zip."
-    print "Make sure `mise run dev:up` has http-nu + stripe-listen running so the"
+    print "Make sure `mise run daemons:up` has http-nu + stripe-listen running so the"
     print "post-payment webhook reaches smp."
 }
 
@@ -142,7 +142,7 @@ export def test_checkout_thai_buyer [] {
     let listing = (^stripe prices list --lookup-keys sports_coach_monthly_usd --limit 1 | complete)
     let prices = (try { $listing.stdout | from json | get data } catch { [] })
     if ($prices | length) == 0 {
-        print "✗ no price for sports_coach_monthly_usd — run mise run apply -- prices"
+        print "✗ no price for sports_coach_monthly_usd — run mise run stripe:apply-prices"
         exit 1
     }
     let price_id = ($prices | first | get id)

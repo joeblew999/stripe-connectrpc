@@ -42,8 +42,8 @@ fnox set -p keychain SMP_CONSUMER_REMY_SPORT_SIGNING_SECRET "$(openssl rand -hex
 # Bearer token (consumer presents this on inbound POST /v1/checkout)
 fnox set -p keychain SMP_CONSUMER_REMY_SPORT_BEARER_TOKEN  "$(openssl rand -hex 32)"
 
-mise run dev:restart-http         # picks up new bearer token for /v1/checkout
-mise run dev:restart-dispatcher   # picks up new signing secret for outbound
+mise run daemons:restart-http         # picks up new bearer token for /v1/checkout
+mise run daemons:restart-dispatcher   # picks up new signing secret for outbound
 
 # Share both with the consumer via your normal secret-distribution channel.
 ```
@@ -227,7 +227,7 @@ mise run dispatch:logs           # live dispatcher console
 
 All read directly from xs — no extra logging infra. Smoke-test the inbound side:
 ```sh
-mise run test -- rpc-checkout  # 201 happy path + two 401 auth-wall probes
+mise run test:rpc-checkout     # 201 happy path + two 401 auth-wall probes
 ```
 
 ## 7. Topics, summarized

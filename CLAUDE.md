@@ -65,10 +65,11 @@ data/
 
 - **mise tasks are the entry points.** Avoid running raw `nu`, `xs`, `http-nu`, `stripe` outside `mise x --` or `fnox exec --` (mise shim activation can fail otherwise).
 - **Verb tasks are the canonical bootstrap surface:**
-  - `mise run show -- <what> [arg]` — read-only Stripe + local data display
-  - `mise run apply -- <what>` — mutate Stripe state from JSONL (idempotent)
-  - `mise run teardown -- <slug>` — archive a project's Stripe state
-  - `mise run test -- <flow> [arg]` — sandbox HIL flows
+  - `mise run stripe:*` — Stripe-side state (apply, teardown, account, status)
+  - `mise run data:*` — local JSONL inspection (scan, projects, countries…)
+  - `mise run test:*` — sandbox HIL flows (checkout, rpc-checkout…)
+  - `mise run daemons:*` — pitchfork runtime supervision (up, down, restart-*)
+  - `mise run xs:* / dispatch:* / rpc:*` — event store + audit trails
 - **Declarative data is JSONL** under `data/`:
   - `data/reference/*.jsonl` — Stripe-sourced; hand-edit after eyeballing the source page.
   - `data/config/*.jsonl` — our config; applied to Stripe via `apply -- *`.
@@ -102,11 +103,11 @@ The system is CLI-discoverable — prefer running commands over reading docs:
 | Question | Command |
 |---|---|
 | What tasks exist? | `mise tasks` |
-| How do I set up + run end-to-end? | `mise run show -- flow` |
-| What data files are there, and what's in them? | `mise run show -- scan` |
-| What projects are registered? | `mise run show -- projects` |
-| What's the live Stripe state? | `mise run show -- account` / `show -- status` |
-| Does my install work? | `mise run verify` / `verify:all` |
+| How do I set up + run end-to-end? | `mise run data:flow` |
+| What data files are there, and what's in them? | `mise run data:scan` |
+| What projects are registered? | `mise run data:projects` |
+| What's the live Stripe state? | `mise run stripe:account` / `stripe:status` |
+| Does my install work? | `mise run tools:verify` / `tools:verify-all` |
 
 The only docs that don't self-document via CLI:
 

@@ -40,7 +40,7 @@ def check_secret [name: string, --optional] {
         print $"  ⊘ keychain: ($name) — optional (cf:* alt runtime only)"
         0
     } else {
-        print $"  ✗ keychain: ($name) — run `mise run onboard`"
+        print $"  ✗ keychain: ($name) — run `mise run tools:onboard`"
         1
     }
 }
@@ -82,7 +82,7 @@ def quick [] {
         print $"($fails) check\(s\) failed"
         exit 1
     } else {
-        print "all checks passed — try: mise run dev:up"
+        print "all checks passed — try: mise run daemons:up"
     }
 }
 
@@ -92,66 +92,72 @@ def quick [] {
 
 def verify_all [] {
     let cases = [
-        # toolchain / display
-        {name: "verify"}
-        {name: "show",      args: ["account"]}
-        {name: "show",      args: ["status"]}
-        {name: "show",      args: ["countries"]}
-        {name: "show",      args: ["country", "AU"]}
-        {name: "show",      args: ["tax-codes"]}
-        {name: "show",      args: ["tax-coverage"]}
-        {name: "show",      args: ["tax", "AU"]}
-        {name: "show",      args: ["launches"]}
-        {name: "show",      args: ["projects"]}
-        {name: "show",      args: ["payment-methods"]}
-        {name: "show",      args: ["scan"]}
-        {name: "show",      args: ["flow"]}
+        # tools:* — toolchain + secrets
+        {name: "tools:verify"}
+        {name: "tools:install",    skip: true, note: "already run during setup"}
+        {name: "tools:onboard",    skip: true, note: "interactive prompts"}
+        {name: "tools:verify-all", skip: true, note: "would self-recurse"}
 
-        # apply (idempotent — safe to re-run)
-        {name: "apply",     args: ["products"]}
-        {name: "apply",     args: ["prices"]}
-        {name: "apply",     args: ["portal"]}
-        {name: "apply",     args: ["payment-methods"]}
-        {name: "apply",     args: ["webhook"], skip: true, note: "needs SMP_SERVICE_URL"}
+        # stripe:* — Stripe-side state
+        {name: "stripe:account"}
+        {name: "stripe:status"}
+        {name: "stripe:payment-methods"}
+        {name: "stripe:apply-products"}
+        {name: "stripe:apply-prices"}
+        {name: "stripe:apply-portal"}
+        {name: "stripe:apply-payment-methods"}
+        {name: "stripe:apply-webhook", skip: true, note: "needs SMP_SERVICE_URL"}
+        {name: "stripe:bootstrap"}
+        {name: "stripe:teardown",         skip: true, note: "destructive (archives products); run manually if you want"}
+        {name: "stripe:teardown-project", skip: true, note: "destructive (archives one project)"}
+        {name: "stripe:trigger-completed"}
+        {name: "stripe:login",  skip: true, note: "interactive browser"}
+        {name: "stripe:listen", skip: true, note: "duplicate of pitchfork 'listen' daemon"}
 
-        # test flows
-        {name: "test",      args: ["customer"]}
-        {name: "test",      args: ["checkout"]}
-        {name: "test",      args: ["checkout-payments"]}
-        {name: "test",      args: ["checkout-thai"]}
-        {name: "test",      args: ["rpc-checkout"]}
+        # data:* — local JSONL inspection
+        {name: "data:scan"}
+        {name: "data:projects"}
+        {name: "data:countries"}
+        {name: "data:country",      args: ["AU"]}
+        {name: "data:tax-codes"}
+        {name: "data:tax-coverage"}
+        {name: "data:tax",          args: ["AU"]}
+        {name: "data:launches"}
+        {name: "data:flow"}
 
-        # xs
+        # test:* — sandbox flows
+        {name: "test:customer"}
+        {name: "test:checkout"}
+        {name: "test:checkout-payments"}
+        {name: "test:checkout-thai"}
+        {name: "test:rpc-checkout"}
+
+        # xs:*
         {name: "xs:cat"}
         {name: "xs:last",   args: ["stripe.webhook.verified"]}
         {name: "xs:tail"}
         {name: "xs:counts"}
         {name: "xs:append", args: ["test.verify", "{\"ok\":true}"]}
 
-        # dispatch (Phase 3a — outbound to consumers)
+        # dispatch:* (Phase 3a — outbound to consumers)
         {name: "dispatch:attempted"}
         {name: "dispatch:delivered"}
         {name: "dispatch:failed"}
         {name: "dispatch:retry"}
         {name: "dispatch:dead-lettered"}
+        {name: "dispatch:logs", skip: true, note: "blocks (tail -f)"}
 
-        # rpc (Phase 3b — inbound /v1/checkout)
+        # rpc:* (Phase 3b — inbound /v1/checkout)
         {name: "rpc:intent"}
         {name: "rpc:created"}
         {name: "rpc:failed"}
 
-        # dev daemons
-        {name: "dev:status"}
-        {name: "dev:logs",  skip: true, note: "blocks (tail -f)"}
-        {name: "dev:tui",   skip: true, note: "interactive TUI"}
-        {name: "dispatch:logs", skip: true, note: "blocks (tail -f)"}
+        # daemons:*
+        {name: "daemons:status"}
+        {name: "daemons:logs", skip: true, note: "blocks (tail -f)"}
+        {name: "daemons:tui",  skip: true, note: "interactive TUI"}
 
-        # stripe passthroughs
-        {name: "stripe:trigger-completed"}
-        {name: "stripe:login",  skip: true, note: "interactive browser"}
-        {name: "stripe:listen", skip: true, note: "duplicate of pitchfork 'listen'"}
-
-        # open:* (idempotent — never open browser if already configured)
+        # open:* (idempotent — never opens browser if already configured)
         {name: "open:cf-account"}
         {name: "open:cf-tokens"}
         {name: "open:stripe-account"}
@@ -163,7 +169,7 @@ def verify_all [] {
         {name: "open:stripe-smp"}
         {name: "open:stripe-webhooks"}
 
-        # cf:* (alternative runtime, retained)
+        # cf:* (alternative runtime)
         {name: "cf:cargo-check",       skip: true, note: "slow wasm build; alt runtime"}
         {name: "cf:cargo-build",       skip: true, note: "slow worker-build; alt runtime"}
         {name: "cf:cargo-clean",       skip: true, note: "destructive; alt runtime"}
@@ -172,16 +178,11 @@ def verify_all [] {
         {name: "cf:worker-tail",       skip: true, note: "blocks; alt runtime"}
         {name: "cf:worker-secret-put", skip: true, note: "alt runtime"}
 
-        # meta
-        {name: "mise:install",  skip: true, note: "already run during setup"}
-        {name: "onboard",       skip: true, note: "interactive prompts"}
-        {name: "verify:all",    skip: true, note: "would self-recurse"}
-
-        # dev daemon lifecycle — run LAST and bring daemons back up after
-        {name: "dev:restart-http"}
-        {name: "dev:restart-listen"}
-        {name: "dev:restart-dispatcher"}
-        {name: "dev:restart-dispatch-retry"}
+        # daemons:restart-* — last so we leave a clean running state
+        {name: "daemons:restart-http"}
+        {name: "daemons:restart-listen"}
+        {name: "daemons:restart-dispatcher"}
+        {name: "daemons:restart-dispatch-retry"}
     ]
 
     mut pass = 0
