@@ -20,19 +20,21 @@ Every mise task is `<noun>:<verb>` so paired operations read obviously together:
 ## Setup
 
 ```sh
-mise run tools:install      # nushell + stripe-cli + xs + http-nu + pitchfork + fnox + wrangler
-mise run tools:onboard      # Stripe creds → keychain (interactive)
-mise run stripe:bootstrap   # push data/ to Stripe: products + prices + portal + payment-methods
-mise run daemons:down       # ensure daemons stopped
-rm -rf .xs-store/           # clear local event store
-mise run daemons:up         # start 4 daemons: http + listen + dispatcher + dispatch-retry
+mise run tools:install        # nushell + stripe-cli + xs + http-nu + pitchfork + fnox + wrangler
+mise run tools:onboard        # Stripe creds → keychain (interactive)
+mise run stripe:bootstrap     # push data/ to Stripe: products + prices + portal + payment-methods
+mise run stripe:verify-state  # confirm Stripe matches data/ (active=true, metadata.project tagged)
+mise run daemons:down         # ensure daemons stopped
+rm -rf .xs-store/             # clear local event store
+mise run daemons:up           # start 4 daemons: http + listen + dispatcher + dispatch-retry
 ```
 
 Reverse the Stripe-side push:
 
 ```sh
-mise run stripe:teardown                       # archive every project's products + prices in Stripe
-mise run stripe:teardown-project -- remy-sport # or just one project
+mise run stripe:teardown                        # archive every project's products + prices
+mise run stripe:teardown-project -- remy-sport  # or just one project
+mise run stripe:verify-state                    # now expects active=false → exits 1 (drift detected)
 ```
 
 ## After `daemons:up`

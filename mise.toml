@@ -116,6 +116,10 @@ run = 'fnox exec -- nu scripts/bootstrap.nu apply all'
 description = "Archive every project's products + prices on Stripe (reverse of stripe:bootstrap)"
 run = 'fnox exec -- nu scripts/bootstrap.nu teardown all'
 
+[tasks."stripe:verify-state"]
+description = "Confirm Stripe-side state matches every data/projects/*/JSONL declaration"
+run = 'fnox exec -- nu scripts/bootstrap.nu verify-state'
+
 [tasks."stripe:apply-products"]
 description = "Upsert products to Stripe from data/projects/*/products.jsonl"
 run = 'fnox exec -- nu scripts/bootstrap.nu apply products'

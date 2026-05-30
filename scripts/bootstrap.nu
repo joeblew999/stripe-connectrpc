@@ -5,8 +5,9 @@
 #   nu scripts/bootstrap.nu apply <thing>     # mutate Stripe (idempotent)
 #   nu scripts/bootstrap.nu test <flow>       # one-off test resources
 #   nu scripts/bootstrap.nu teardown <slug>   # archive per-project state
+#   nu scripts/bootstrap.nu verify-state      # confirm Stripe matches data/
 #
-# Implementations live in scripts/bootstrap/{show,apply,test,teardown,lib}.nu.
+# Implementations live in scripts/bootstrap/{show,apply,test,teardown,verify,lib}.nu.
 # This file is intentionally thin — the verb match is the entire surface.
 
 use bootstrap/lib.nu *
@@ -14,6 +15,7 @@ use bootstrap/show.nu *
 use bootstrap/apply.nu *
 use bootstrap/test.nu *
 use bootstrap/teardown.nu *
+use bootstrap/verify.nu *
 
 def main [
     verb: string = "show"
@@ -89,9 +91,12 @@ def main [
                 teardown_project $sub
             }
         }
+        "verify-state" => {
+            verify_stripe_state
+        }
         _ => {
             print $"unknown verb: ($verb)"
-            print "  verbs:  show | apply | test | teardown"
+            print "  verbs:  show | apply | test | teardown | verify-state"
             exit 1
         }
     }

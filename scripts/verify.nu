@@ -108,6 +108,7 @@ def verify_all [] {
         {name: "stripe:apply-payment-methods"}
         {name: "stripe:apply-webhook", skip: true, note: "needs SMP_SERVICE_URL"}
         {name: "stripe:bootstrap"}
+        {name: "stripe:verify-state"}
         {name: "stripe:teardown",         skip: true, note: "destructive (archives products); run manually if you want"}
         {name: "stripe:teardown-project", skip: true, note: "destructive (archives one project)"}
         {name: "stripe:trigger-completed"}
