@@ -1,7 +1,7 @@
 # primary runtime artifacts
 .xs-store/
 .DS_Store
-/node_modules
+node_modules/
 
 # service/ Rust workspace — build + dev artifacts
 service/target/
