@@ -144,7 +144,7 @@ export def dispatch_to_consumer [
         | ^curl -sS -X POST $consumer.url
             -H $"Stripe-Signature: ($stripe_sig_header)"
             -H "Content-Type: application/json"
-            -H "User-Agent: stripe-smp-dispatcher/0.1"
+            -H "User-Agent: stripe-connectrpc-dispatcher/0.1"
             -w "\n%{http_code}"
             --max-time 10
             --data-binary @-

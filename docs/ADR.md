@@ -1,4 +1,4 @@
-# stripe-smp architecture decisions
+# stripe-connectrpc architecture decisions
 
 Single ADR. When a decision flips, edit in place and add a dated entry under "Revisions" at the bottom.
 
@@ -179,8 +179,35 @@ After 7 total attempts (~1.6 days), `.dead-lettered` is emitted and the chain st
 - 5 minutes later, attempt=3 fires → `.failed (attempt=3)` + `.retry (attempt=4, +30m)`.
 - Synthetic injection at `attempt=7` → dispatched → failed → `.dead-lettered` with `reason: "non-2xx after 7 attempts"`.
 
+## Decision 13 — opensigma read/analytics side, vendored via `.src/` — 2026-06-20
+
+**Status:** ACCEPTED — **running locally against the real test account** (not yet deployed to Cloudflare). Wired into `mise.toml` as the `sigma:*` task group + `.src/` gitignored.
+
+**Proven 2026-06-20 (local run, no Workers Paid, no deploy):** `wrangler dev` (miniflare emulates D1 + Queues) reusing smp's own `STRIPE_API_KEY` + `STRIPE_WEBHOOK_SECRET` keychain items (opensigma reads the identical env var names). Flow: `sigma:dev-vars` (gen ephemeral `.dev.vars` from keychain) → `sigma:db-local` (migrate local D1) → `sigma:dev` (bg) → `sigma:backload` (curl the scheduled handler) → `sigma:d1` (query). Result: **19 resources mirrored from `acct_1QJrzxABkTiOs5on` test mode into local D1** — 95 checkout_sessions, 64 prices, 55 products, 41 balance_transactions, 38 payment_intents, 34 charges, 19 customers, 1 subscription, 1 invoice. Charge IDs carry the account suffix (`ch_3Tce…ABkTiOs5on…`), confirming real-account data.
+
+**Problem:** smp is purely the **write/mutation** side — it creates checkout sessions, mutates Stripe state from JSONL, and fans verified webhooks to consumers. There is no **read/analytics** side: no way to query/dashboard/join the Stripe billing data we accumulate without paying Stripe Sigma (~CA$21→2,700/mo) or Data Pipeline.
+
+**Solution:** Adopt [choyiny/opensigma](https://github.com/choyiny/opensigma) — an MIT, OSS Stripe Sigma / Data Pipeline replacement that mirrors a Stripe account into Cloudflare **D1** (27 tables, webhook-fresh + cron backload, NL queries via a bundled skill). It runs on Workers + D1 + Queues (TS / Hono / Drizzle / `stripe@22`).
+
+**Why a separate read subscriber, NOT a consumer of smp's dispatcher:**
+opensigma and smp are **orthogonal** — Stripe is the shared source of truth. opensigma subscribes to Stripe **directly** (its own webhook endpoint + a read-only `rk_` restricted key), not through smp's dispatcher. This was a deliberate reversal of an earlier "route opensigma through smp" idea, because:
+1. Routing through smp would require editing opensigma's `src/webhooks/handler.ts` → forces a fork. Direct subscription needs **zero source edits**.
+2. It would couple analytics availability to the write service (mirror stalls when smp deploys).
+3. "Two Stripe webhook endpoints" is not a problem — Stripe fans out to multiple endpoints natively; each verifies its own signing secret.
+
+**Why vendor via `.src/` (not fork, not git submodule):**
+Zero source edits means upstream stays pristine. `mise run sigma:src` git-clones it into gitignored `.src/opensigma`; `sigma:*` tasks drive its own pnpm-local toolchain. Rebasing on upstream = re-run `sigma:src`. One repo, one tool surface, no fork to maintain. Mirrors the overlay pattern used elsewhere in this estate (graphite-overlay / ifclite-ubuntu).
+
+**Toolchain note:** added `node = "22"` + `npm:pnpm` to `[tools]`. node 22 (not the `.nvmrc`'s 20) because opensigma's own `wrangler@^4.95` requires ≥22. opensigma uses its own pnpm-local wrangler, independent of smp's pinned `npm:wrangler = 4.71.0` (cf:* alt-runtime).
+
+**Offline evaluation (2026-06-20):** `mise run sigma:eval` → pnpm install clean, `tsc --noEmit` 0 errors, **vitest 26 files / 87 tests pass**. Upstream code is healthy (per-resource upsert modules each tested, idempotent webhook insert, cron+Queue backload, ~60 event types).
+
+**Live deploy (not yet done — but no longer plan-blocked):** Cloudflare **Queues are on the free Workers plan since 2026-02-04** (10k ops/day, 24h retention) — an earlier note here wrongly claimed Queues needed Workers Paid; corrected after verifying Cloudflare's changelog. So a full live deploy can run at $0 within free-tier limits. Needs a read-only `rk_` key on AU acct `acct_1QJrzxABkTiOs5on` + a webhook signing secret, both via fnox keychain (items `SIGMA_STRIPE_API_KEY` / `SIGMA_STRIPE_WEBHOOK_SECRET`). Live path: `sigma:d1-create → sigma:secrets → sigma:db-migrate → sigma:deploy`.
+
 ## Revisions
 
+- **2026-06-23** — alt-runtime (Cloudflare/Rust, Decision 1's path) outbound keystone built + proven: `src/stripe_client.rs` = `WorkerStripeClient` implementing async-stripe's `StripeClient` over `worker::Fetch` (`!Send`→`Send` via `worker::send::SendFuture`). New `GET /v1/sessions` route runs a real `ListCheckoutSession` → `wrangler dev` returned `10 checkout sessions` (200) from a live Stripe call. Pinned `worker-build =0.8.4` (0.8.5 emits `--force-enable-abort-handler`, rejected by the `wasm-bindgen 0.2.122` that `worker="0.8"` locks). The "Rust-on-CF is hard" premise behind Decision 9's pivot is disproven.
+- **2026-06-20** — Decision 13 added + ACCEPTED, then proven RUNNING locally against the real test account (19 resources mirrored into local D1 via `wrangler dev`). opensigma vendored as the read/analytics side via `sigma:*` tasks + `.src/opensigma`; subscribes to Stripe directly (not through smp); offline eval green (87 tests). Corrected the Queues=Workers-Paid claim — Queues are free-tier since 2026-02-04. Live deploy pending only creds.
 - **2026-05-29** — Decision 12 added + ACCEPTED. Retry + dead-letter live; full backoff chain verified through attempt 3, dead-letter verified via synthetic attempt=7 injection.
 - **2026-05-29** — Decision 11 added + ACCEPTED. `/v1/checkout` live; full consumer-RPC loop verified (happy path 201 + two 401 auth-wall probes pass).
 - **2026-05-29** — Decision 10 added + ACCEPTED. Dispatcher live; full chain verified end-to-end with real Stripe trigger → consumer 200.

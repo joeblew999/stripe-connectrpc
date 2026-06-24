@@ -11,15 +11,33 @@
 "github:cablehead/http-nu" = "0.16.0"
 
 # --- alternative-runtime tools (cf:* tasks only) ---
-# Lets you also deploy the stripe-smp service to Cloudflare Workers.
+# Lets you also deploy the stripe-connectrpc service to Cloudflare Workers.
 # Not used by the primary http-nu+xs runtime; safe to remove if you'll
 # never run cf:*. Pinned because wrangler breaks on minor bumps.
 "npm:wrangler" = "4.71.0"
+
+# --- ConnectRPC codegen for the alt-runtime Rust worker (cf:* tasks) ---
+# protoc compiles proto/stripe/v1/*.proto via connectrpc-build (Rust server+client);
+# buf does proto lint + TypeScript client codegen for consuming projects.
+# Same pins as google_maps feat/cloudflare-workers.
+"aqua:protocolbuffers/protobuf/protoc" = "latest"
+"aqua:bufbuild/buf" = "latest"
+
+# --- opensigma read/analytics side (sigma:* tasks only) ---
+# opensigma (OSS Stripe Sigma / Data Pipeline replacement) is vendored into
+# .src/opensigma via `mise run sigma:src` and runs with its OWN pnpm-local
+# toolchain (including its own wrangler@^4.95). We only need node + pnpm here.
+# node 22 because opensigma's wrangler needs >=22 (its .nvmrc wrongly says 20).
+# Safe to remove if you'll never run sigma:*.
+node = "22"
+"npm:pnpm" = "latest"
 
 [env]
 XS_STORE      = "{{ config_root }}/.xs-store"
 HTTP_NU_ADDR  = "127.0.0.1:8787"
 WASM_TARGET   = "wasm32-unknown-unknown"
+SIGMA_REPO    = "https://github.com/choyiny/opensigma"
+SIGMA_SRC     = "{{ config_root }}/.src/opensigma"
 
 # =============================================================================
 # Naming convention: every task is `<noun>:<verb>` so paired operations
@@ -36,6 +54,7 @@ WASM_TARGET   = "wasm32-unknown-unknown"
 #   rpc:*       — inbound consumer-RPC (POST /v1/checkout audit)
 #   open:*      — idempotent browser launchers
 #   cf:*        — alternative runtime (Cloudflare Workers; alt-runtime/)
+#   sigma:*     — opensigma read/analytics side (vendored in .src/opensigma)
 # =============================================================================
 
 # =============================================================================
@@ -137,7 +156,7 @@ description = "Reconcile Stripe payment_method_configuration from data/config/pa
 run = 'fnox exec -- nu scripts/bootstrap.nu apply payment-methods'
 
 [tasks."stripe:apply-webhook"]
-description = "Register a Stripe webhook endpoint at SMP_SERVICE_URL (warn-skipped if unset)"
+description = "Register a Stripe webhook endpoint at STRIPE_SERVICE_URL (warn-skipped if unset)"
 run = 'fnox exec -- nu scripts/bootstrap.nu apply webhook'
 
 [tasks."stripe:teardown-project"]
@@ -338,9 +357,9 @@ run = "fnox exec -- nu scripts/open.nu stripe-account"
 description = "Stripe Dashboard → Activation onboarding (opens only if account not yet activated)"
 run = "fnox exec -- nu scripts/open.nu stripe-onboard"
 
-[tasks."open:stripe-smp"]
+[tasks."open:stripe-connectrpc"]
 description = "Stripe Dashboard → Managed Payments (opens only if account not yet activated)"
-run = "fnox exec -- nu scripts/open.nu stripe-smp"
+run = "fnox exec -- nu scripts/open.nu stripe-connectrpc"
 
 [tasks."open:stripe-webhooks"]
 description = "Stripe Dashboard → Webhooks (opens only if SMP_STRIPE_WEBHOOK_SECRET missing)"
@@ -374,38 +393,227 @@ run = "nu scripts/open.nu cf-account"
 
 [tasks."cf:cargo-check"]
 description = "cargo check the Workers wasm32 build (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "cargo check --target $WASM_TARGET"
 
 [tasks."cf:cargo-build"]
 description = "worker-build --release (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "worker-build --release"
 
 [tasks."cf:cargo-clean"]
 description = "cargo clean + remove build/ (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "cargo clean ; rm -rf build"
 
 [tasks."cf:worker-dev"]
 description = "wrangler dev locally (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "fnox exec -- nu scripts/worker-dev.nu"
 
 [tasks."cf:worker-deploy"]
 description = "Deploy worker to Cloudflare (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "fnox exec -- wrangler deploy"
 
 [tasks."cf:worker-tail"]
 description = "Tail live Cloudflare Worker logs (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = "fnox exec -- wrangler tail"
 
 [tasks."cf:worker-secret-put"]
 description = "Push STRIPE_* secrets from fnox keychain → wrangler secrets (alt runtime)"
-dir = "alt-runtime/cloudflare"
+dir = "service/worker"
 run = '''
 fnox exec -- nu -c '$env.STRIPE_SECRET_KEY     | wrangler secret put STRIPE_SECRET_KEY'
 fnox exec -- nu -c '$env.STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
 '''
+
+# =============================================================================
+# sigma:* — opensigma READ / ANALYTICS side (https://github.com/choyiny/opensigma).
+#
+# opensigma mirrors the Stripe account into Cloudflare D1 (read-only analytics:
+# query/dashboard/NL over your billing data — a free Stripe Sigma replacement).
+# It is the READ half; the primary http-nu+xs runtime above is the WRITE half.
+# They are independent Stripe subscribers — opensigma subscribes to Stripe
+# DIRECTLY (own webhook endpoint + read-only rk_ key), NOT through smp's
+# dispatcher. So no source edits are needed: we vendor pristine upstream into
+# .src/opensigma (gitignored) and rebase via `sigma:src`.
+#
+#   Offline (no creds):  sigma:src → sigma:install → sigma:eval
+#   Live (needs creds; Queues are FREE-tier since 2026-02-04, 10k ops/day):
+#                        sigma:d1-create → sigma:secrets → sigma:db-migrate → sigma:deploy
+# =============================================================================
+
+[tasks."sigma:src"]
+description = "git clone/update pristine opensigma into .src/opensigma (gitignored)"
+run = '''
+set -e
+if [ -d "$SIGMA_SRC/.git" ]; then
+  echo "updating $SIGMA_SRC"
+  git -C "$SIGMA_SRC" fetch --depth 1 origin
+  git -C "$SIGMA_SRC" reset --hard origin/HEAD
+else
+  echo "cloning $SIGMA_REPO -> $SIGMA_SRC"
+  git clone --depth 1 "$SIGMA_REPO" "$SIGMA_SRC"
+fi
+git -C "$SIGMA_SRC" log --oneline -1
+'''
+
+[tasks."sigma:src-clean"]
+description = "Remove the vendored .src/opensigma checkout"
+run = "rm -rf $SIGMA_SRC && echo removed"
+
+[tasks."sigma:install"]
+description = "pnpm install inside .src/opensigma"
+depends = ["sigma:src"]
+dir = "{{ config_root }}/.src/opensigma"
+run = "pnpm install"
+
+[tasks."sigma:config"]
+description = "Materialize wrangler.jsonc from upstream's CI template (dummy ids; for offline test)"
+dir = "{{ config_root }}/.src/opensigma"
+run = "cp wrangler.jsonc.ci wrangler.jsonc && echo 'wrote wrangler.jsonc (ci template — replace database_id before deploy)'"
+
+[tasks."sigma:typecheck"]
+description = "tsc --noEmit on opensigma"
+depends = ["sigma:config"]
+dir = "{{ config_root }}/.src/opensigma"
+run = "pnpm typecheck"
+
+[tasks."sigma:test"]
+description = "Run opensigma's vitest suite (workers pool; no Stripe creds needed)"
+depends = ["sigma:config"]
+dir = "{{ config_root }}/.src/opensigma"
+run = "pnpm test"
+
+[tasks."sigma:eval"]
+description = "Full OFFLINE evaluation: install + typecheck + test (no creds, no deploy)"
+depends = ["sigma:install"]
+dir = "{{ config_root }}/.src/opensigma"
+run = '''
+cp wrangler.jsonc.ci wrangler.jsonc
+pnpm typecheck
+pnpm test
+'''
+
+# --- LOCAL run: mirror the existing Stripe account into a LOCAL D1 via
+#     wrangler dev (miniflare emulates D1 + Queues). No Workers Paid, no
+#     deploy. Reuses stripe-connectrpc's own STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET
+#     keychain items (opensigma reads the exact same env var names).
+#
+#     Flow:  sigma:dev-vars → sigma:db-local → sigma:dev (bg) → sigma:backload → sigma:d1
+#     PROVEN 2026-06-20: 19 resources mirrored (95 checkout_sessions, 64
+#     prices, 34 charges, …) from acct_1QJrzxABkTiOs5on test mode.
+
+[tasks."sigma:dev-vars"]
+description = "Generate ephemeral .dev.vars from the keychain (wrangler dev reads it; gitignored)"
+dir = "{{ config_root }}/.src/opensigma"
+run = '''
+fnox exec -- sh -c 'printf "STRIPE_API_KEY=%s\nSTRIPE_WEBHOOK_SECRET=%s\n" "$STRIPE_API_KEY" "$STRIPE_WEBHOOK_SECRET" > .dev.vars'
+echo "wrote .dev.vars from keychain (gitignored)"
+'''
+
+[tasks."sigma:db-local"]
+description = "Apply Drizzle migrations to the LOCAL miniflare D1"
+depends = ["sigma:config"]
+dir = "{{ config_root }}/.src/opensigma"
+run = "pnpm db:migrate:local"
+
+[tasks."sigma:dev"]
+description = "wrangler dev locally (miniflare D1+Queues). Run sigma:dev-vars + sigma:db-local first."
+depends = ["sigma:dev-vars"]
+dir = "{{ config_root }}/.src/opensigma"
+run = "pnpm dev"
+
+[tasks."sigma:backload"]
+description = "Trigger the cron/scheduled handler once → enqueue a full backload (sigma:dev must be running)"
+run = 'curl -s "http://localhost:8787/cdn-cgi/handler/scheduled" -w "\n%{http_code}\n"'
+
+[tasks."sigma:d1"]
+description = "Query the LOCAL D1 — usage: mise run sigma:d1 -- \"SELECT count(*) FROM charges\""
+usage = '''
+arg "<sql>" help="SQL to run against the local stripe_sync database"
+'''
+dir = "{{ config_root }}/.src/opensigma"
+run = 'wrangler d1 execute stripe_sync --local --command "${usage_sql}"'
+
+# --- live deploy (needs creds; Queues are free-tier since 2026-02-04) ---
+
+[tasks."sigma:dev-remote"]
+description = "wrangler dev against REMOTE resources (needs real wrangler.jsonc + deployed D1/Queues)"
+dir = "{{ config_root }}/.src/opensigma"
+run = "fnox exec -- pnpm dev --remote"
+
+[tasks."sigma:d1-create"]
+description = "Create the D1 database + the two queues (one-time). Paste database_id into wrangler.jsonc."
+dir = "{{ config_root }}/.src/opensigma"
+run = '''
+fnox exec -- wrangler d1 create stripe_sync
+fnox exec -- wrangler queues create stripe-sync-backload
+fnox exec -- wrangler queues create stripe-sync-dlq
+'''
+
+[tasks."sigma:secrets"]
+description = "Push opensigma secrets (read-only rk_ key + webhook secret) from fnox → wrangler"
+dir = "{{ config_root }}/.src/opensigma"
+run = '''
+fnox exec -- nu -c '$env.SIGMA_STRIPE_API_KEY      | wrangler secret put STRIPE_API_KEY'
+fnox exec -- nu -c '$env.SIGMA_STRIPE_WEBHOOK_SECRET | wrangler secret put STRIPE_WEBHOOK_SECRET'
+'''
+
+[tasks."sigma:db-migrate"]
+description = "Apply Drizzle migrations to the remote D1 database"
+dir = "{{ config_root }}/.src/opensigma"
+run = "fnox exec -- pnpm db:migrate"
+
+[tasks."sigma:deploy"]
+description = "wrangler deploy opensigma to Cloudflare Workers"
+dir = "{{ config_root }}/.src/opensigma"
+run = "fnox exec -- pnpm deploy"
+
+[tasks."sigma:backload-reset"]
+description = "Force a full historical re-backload on the next cron tick"
+dir = "{{ config_root }}/.src/opensigma"
+run = "fnox exec -- pnpm backload:reset"
+
+# =============================================================================
+# native:* — the SAME ConnectRPC service (service/crates/connectrpc) on a
+# native tokio/hyper axum server. No Cloudflare, runs on a laptop or VPS.
+# The cf:* group runs the identical service as a Worker. service/native/.
+# =============================================================================
+
+[tasks."native:check"]
+description = "cargo check the native ConnectRPC server"
+dir = "service"
+run = "cargo check -p stripe-native"
+
+[tasks."native:run"]
+description = "Run the native ConnectRPC server (STRIPE_SECRET_KEY + RAUTHY_ISSUER/RAUTHY_JWKS_URL from fnox/env)"
+dir = "service"
+run = "fnox exec -- cargo run -p stripe-native"
+
+[tasks."rauthy:verify"]
+description = "Prove stripe works behind the Rauthy→Cedar guard locally (Docker + ../../vm-uncloud → real token → CheckoutService). `-- --down` to tear down."
+dir = "service"
+run = "fnox exec -- nu scripts/rauthy-verify.nu"
+
+[tasks."catalog:verify"]
+description = "Load remy-sport products INTO Stripe via CatalogService.UpsertProduct (typed, admin-gated, idempotent — replaces the stripe-cli seed_products). `-- --down` to tear down."
+dir = "service"
+run = "fnox exec -- nu scripts/catalog-verify.nu"
+
+[tasks."native:build"]
+description = "Release build of the native ConnectRPC server"
+dir = "service"
+run = "cargo build -p stripe-native --release"
+
+[tasks."proto:gen"]
+description = "Regenerate codegen from proto/stripe/v1/*.proto (Rust via cargo build.rs; TS via buf)"
+dir = "service/crates/connectrpc"
+run = "buf generate"
+
+[tasks."proto:lint"]
+description = "Lint the smp proto (buf)"
+dir = "service/crates/connectrpc"
+run = "buf lint"

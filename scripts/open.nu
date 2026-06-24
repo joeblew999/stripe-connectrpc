@@ -30,12 +30,12 @@ def main [
             needed: {|| needs_stripe_account_setup },
             already: "Stripe account already onboarded"
         }
-        "stripe-smp": {
+        "stripe-connectrpc": {
             url: "https://dashboard.stripe.com/settings/managed-payments",
             needed: {|| needs_stripe_account_setup },
             already: "Stripe account ready — SMP enablement is per-checkout-session, no dashboard toggle needed"
         }
-        "stripe-smp-docs": {
+        "stripe-connectrpc-docs": {
             url: "https://docs.stripe.com/payments/managed-payments/set-up",
             needed: {|| needs_stripe_account_setup },  # only opens if account isn't ready
             already: "Stripe account already set up — docs page not needed"

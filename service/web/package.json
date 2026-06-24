@@ -1,0 +1,29 @@
+{
+  "name": "stripe-connectrpc-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "buf generate",
+    "dev": "buf generate && vite",
+    "build": "buf generate && tsc -b && vite build",
+    "typecheck": "buf generate && tsc --noEmit"
+  },
+  "dependencies": {
+    "@joeblew999/kumo-connectrpc-kit": "jsr:^0.0.8",
+    "@bufbuild/protobuf": "^2.2.0",
+    "@cloudflare/kumo": "^2.3.0",
+    "@connectrpc/connect": "^2.0.0",
+    "@connectrpc/connect-web": "^2.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.50.0",
+    "@bufbuild/protoc-gen-es": "^2.2.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

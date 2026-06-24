@@ -1,0 +1,16 @@
+[package]
+name = "stripe-native"
+version = "0.1.0"
+edition = "2021"
+description = "Native host for stripe-connectrpc — hyper + ureq JWKS fetch, behind the shared Rauthy-OIDC → Cedar guard. Same service + guard as the CF worker."
+publish = false
+
+[dependencies]
+stripe-connectrpc = { path = "../crates/connectrpc", features = ["native"] }
+
+connectrpc = { version = "0.7", default-features = false }
+hyper      = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["server", "tokio", "service"] }
+ureq       = "2"
+tokio      = { version = "1", features = ["rt", "net", "macros"] }
+tower      = { version = "0.5", default-features = false, features = ["util"] }

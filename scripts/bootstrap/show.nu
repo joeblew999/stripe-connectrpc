@@ -281,7 +281,7 @@ export def print_scan [] {
 }
 
 export def print_flow [] {
-    print "stripe-smp end-to-end flow — http-nu + xs runtime"
+    print "stripe-connectrpc end-to-end flow — http-nu + xs runtime"
     print "================================================="
     print ""
     print "Prereq: Stripe account is registered in one of the 38 SMP seller countries."

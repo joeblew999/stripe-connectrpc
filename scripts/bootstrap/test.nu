@@ -92,7 +92,7 @@ export def test_checkout [lookup_key: string, mode: string] {
         if $mode == "smp" {
             print "  If 'managed_payments not enabled' — Stripe Managed Payments isn't"
             print "  activated on the account yet. Either enable it in the dashboard"
-            print "  (mise run open:stripe-smp) or use the Payments-mode fallback:"
+            print "  (mise run open:stripe-connectrpc) or use the Payments-mode fallback:"
             print "    mise run test:checkout-payments"
         }
         exit 1

@@ -1,0 +1,32 @@
+[package]
+name = "stripe-worker"
+version = "0.1.0"
+edition = "2021"
+description = "Cloudflare Worker mounting stripe-connectrpc (typed Connect RPCs over the worker::Fetch Stripe transport)."
+publish = false
+
+[package.metadata.cargo-machete]
+ignored = ["worker-macros", "getrandom"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+stripe-connectrpc = { path = "../crates/connectrpc", features = ["worker"] }
+
+worker        = { version = "0.8", features = ["http"] }
+worker-macros = { version = "0.8", features = ["http"] }
+connectrpc    = { version = "0.7", default-features = false }
+http           = "1"
+http-body-util = "0.1"
+bytes          = "1.5"
+tower          = { version = "0.5", default-features = false, features = ["util"] }
+getrandom      = { version = "0.2", features = ["js"] }
+js-sys         = "0.3"   # Date::now() for the webhook timestamp (wasm has no SystemTime)
+wasm-bindgen   = "0.2"   # the #[durable_object] macro expands to wasm_bindgen:: paths
+serde          = { version = "1", features = ["derive"] }   # the Dispatcher DO's forwarded-event shape
+serde_json     = "1"
+console_error_panic_hook = "0.1"
+# worker-jwks = the worker::Fetch JWKS helper to build the Rauthy verifier.
+connectrpc-oidc = { git = "https://github.com/joeblew999/cf-connectrpc-middleware", rev = "f4c15cb25f821032109bca5927f75e7272e2153e", features = ["worker-jwks"] }
+tokio = { version = "1", default-features = false, features = ["sync"] }

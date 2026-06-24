@@ -1,0 +1,27 @@
+# Worker name = repo name (NOT "smp") so it's trivial to track in the CF dashboard.
+name = "stripe-connectrpc"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-05-01"
+
+[dev]
+port = 8787
+
+# worker-build pinned to =0.8.4: 0.8.5 emits `--force-enable-abort-handler`,
+# which the wasm-bindgen 0.2.122 that `worker = "0.8"` locks does not accept.
+[build]
+command = "cargo install -q worker-build --version '=0.8.4' && worker-build --release"
+
+# The webhook DISPATCHER is a Durable Object: it durably stores every verified
+# Stripe event (SQLite = the event log = the read/analytics store), fans out to
+# consumers, and retries via alarms with a dead-letter. (Replaces the old
+# "D1 + Queues" idea — the DO's storage unifies dispatch state + analytics.)
+[[durable_objects.bindings]]
+name = "DISPATCHER"
+class_name = "Dispatcher"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Dispatcher"]
+
+# Secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) are pushed by:
+#   mise run worker:secret-put  (CLOUDFLARE_API_TOKEN/ACCOUNT_ID from fnox)

@@ -1,0 +1,58 @@
+[package]
+name = "stripe-connectrpc"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable ConnectRPC facade over async-stripe. Runs on Cloudflare Workers (feature `worker`) and native tokio/hyper (feature `native`) — same proto + handlers, transport swapped at the edge. Mirrors google_maps feat/cloudflare-workers."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+# Cloudflare Workers (wasm32): outbound Stripe via worker::Fetch.
+worker = ["_server", "dep:worker"]
+# Native (tokio/hyper): outbound Stripe via reqwest + axum mounting.
+native = ["_server", "dep:reqwest", "connectrpc/axum"]
+# Shared server code (CheckoutServer, handlers, TokenAuthLayer).
+_server = ["dep:tower", "dep:pin-project-lite", "dep:http", "dep:http-body-util"]
+
+[dependencies]
+connectrpc = { version = "0.7", default-features = false }
+buffa      = { version = "0.7", features = ["json"] }
+http-body  = "1"   # generated __connect.rs references ::http_body::Body
+
+# The ONE shared auth/authz — ADOPTED, not built. `connectrpc-guard` composes
+# Rauthy-JWT verification (OidcLayer) → Cedar policy (CedarLayer) + the generic
+# Session→Cedar extractor; this repo brings only its policy FILES + resource
+# name (see guard.rs). From cf-connectrpc-middleware. Pinned to a rev for
+# reproducible builds — bump deliberately. (oidc/cedar/cedar-policy are now
+# transitive via the guard; the worker still deps connectrpc-oidc for fetch_jwks.)
+connectrpc-guard = { git = "https://github.com/joeblew999/cf-connectrpc-middleware", rev = "f4c15cb25f821032109bca5927f75e7272e2153e" }
+
+# async-stripe runtime-free sub-crates (the typed Stripe surface).
+async-stripe-types       = "1.0.0-rc.5"
+async-stripe-shared      = "=1.0.0-rc.5"   # CheckoutSessionMode etc.
+async-stripe-client-core = "1.0.0-rc.5"
+async-stripe-checkout    = { version = "1.0.0-rc.5", features = ["serialize", "deserialize", "checkout_session"] }
+async-stripe-product     = { version = "=1.0.0-rc.5", features = ["serialize", "deserialize", "price", "product"] }
+
+bytes      = "1"
+serde      = { version = "1", features = ["derive"] }
+
+# server-side (gated by _server)
+http             = { version = "1", optional = true }
+http-body-util   = { version = "0.1", optional = true }
+tower            = { version = "0.5", default-features = false, features = ["util"], optional = true }
+pin-project-lite = { version = "0.2", optional = true }
+
+# transport backends (one per target)
+worker  = { version = "0.8", features = ["http"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+async-stripe-billing = { version = "=1.0.0-rc.5", default-features = false, features = ["serialize", "deserialize", "billing_portal_session", "subscription", "invoice"] }
+async-stripe-core = { version = "=1.0.0-rc.5", default-features = false, features = ["serialize", "deserialize", "customer", "refund"] }
+async-stripe-webhook = "=1.0.0-rc.5"   # default features: signature verify (hmac+sha2, wasm-ok) + Event deserialize
+
+[build-dependencies]
+connectrpc-build = "0.7"

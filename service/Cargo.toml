@@ -1,0 +1,14 @@
+# Rust ConnectRPC Stripe gateway — runs on Cloudflare Workers (worker/) AND
+# native (native/), sharing one service crate (crates/connectrpc).
+# Build per-package per-target — see the cf:* / native:* mise tasks. A bare
+# workspace-wide `cargo build` is NOT meaningful (worker = wasm32 only).
+[workspace]
+resolver = "2"
+members = ["crates/connectrpc", "worker", "native"]
+
+# Wasm size matters (Workers 10 MB limit) — applies to the worker build.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

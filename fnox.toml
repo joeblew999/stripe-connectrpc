@@ -24,12 +24,12 @@ STRIPE_API_KEY    = { provider = "keychain", value = "SMP_STRIPE_SECRET_KEY" }
 # run; capture into the keychain. Prod: Stripe Dashboard → Developers →
 # Webhooks → endpoint → Signing secret.
 STRIPE_WEBHOOK_SECRET    = { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SECRET" }
-SMP_STRIPE_WEBHOOK_SECRET = { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SECRET" }
+SMP_STRIPE_WEBHOOK_SECRET= { provider = "keychain", value = "SMP_STRIPE_WEBHOOK_SECRET" }
 
 # Deployed http-nu base URL — used by `apply -- webhook` to register the
 # Stripe webhook endpoint pointing at the service. For local dev this is
 # the stripe-listen tunnel; for prod, set to the public https URL.
-SMP_SERVICE_URL = { provider = "keychain", value = "SMP_SERVICE_URL" }
+STRIPE_SERVICE_URL = { provider = "keychain", value = "STRIPE_SERVICE_URL" }
 
 # ─── Cloudflare path (alternative runtime, retained for later) ────────────
 # Not used by the current http-nu + xs runtime, but kept so the Workers

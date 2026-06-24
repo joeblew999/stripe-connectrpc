@@ -1,0 +1,48 @@
+// Cedar schema for stripe-connectrpc. Actions are the proto-path form that
+// connectrpc_cedar::action::action_from_path produces:
+//   POST /stripe.v1.CheckoutService/CreateCheckoutSession
+//     → Action::"stripe.v1.CheckoutService.CreateCheckoutSession"
+// The principal is dynamic (the Rauthy token subject); roles/scopes ride in
+// context. This replaces the hand-managed per-project bearer tokens.
+
+entity User;
+entity Api;
+
+action "stripe.v1.CheckoutService.CreateCheckoutSession" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.CreateBillingPortal" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.ListSubscriptions" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.CancelSubscription" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.ListInvoices" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.GetCustomer" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.BillingService.CreateRefund" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+
+// Provisioning (admin-only) — the typed replacement for the stripe-cli loaders.
+action "stripe.v1.CatalogService.UpsertProduct" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};
+action "stripe.v1.CatalogService.UpsertPrice" appliesTo {
+  principal: User, resource: Api,
+  context: { roles: Set<String>, scopes: Set<String> }
+};

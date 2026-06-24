@@ -3,8 +3,11 @@
 .DS_Store
 /node_modules
 
-# alt-runtime/cloudflare/ build + dev artifacts
-alt-runtime/cloudflare/target/
-alt-runtime/cloudflare/build/
-alt-runtime/cloudflare/.dev.vars
-alt-runtime/cloudflare/.wrangler/
+# service/ Rust workspace — build + dev artifacts
+service/target/
+service/**/build/
+service/**/.dev.vars
+service/**/.wrangler/
+
+# sigma:* — opensigma vendored upstream (pulled via `mise run sigma:src`)
+.src/

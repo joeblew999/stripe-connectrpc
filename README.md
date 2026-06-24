@@ -1,6 +1,34 @@
-# stripe-smp
+# stripe-connectrpc
 
-Stripe Managed Payments shared service ([stripe.com/managed-payments](https://stripe.com/managed-payments)). Stripe is merchant of record; consumer apps call smp instead of Stripe.
+A **ConnectRPC Stripe gateway** — projects codegen a typed client (and a Kumo GUI) from the proto and call this gateway instead of Stripe directly. It runs on **Cloudflare Workers and native** from one `service/` codebase (transport swapped by Cargo feature). Stripe is merchant of record; the gateway owns the keys + the webhook surface, so consumer apps never embed Stripe.js.
+
+> Renamed 2026-06-23 to `stripe-connectrpc` (was `stripe-smp`, originally `smp`). Crates/proto/env are now `stripe-*`. Old GitHub URLs redirect. ("SMP" still appears where it means Stripe's *Managed Payments* product — that's intentional.)
+
+## Live deployment
+
+| | URL |
+|---|---|
+| **Worker** (CF) | **https://stripe-connectrpc.gedw99.workers.dev** |
+| Health | https://stripe-connectrpc.gedw99.workers.dev/health → `stripe ok` |
+| Webhook (Stripe → gateway) | `POST https://stripe-connectrpc.gedw99.workers.dev/v1/webhook` (HMAC-verified) |
+| ConnectRPC (Rauthy+Cedar guarded) | `/stripe.v1.CheckoutService/*`, `/CatalogService/*`, `/BillingService/*` |
+
+The Worker is named after the repo (`stripe-connectrpc`, **not** `smp`) so it's trivial to track in the CF dashboard. The webhook half is live and needs no auth (Stripe signs by HMAC); the RPC routes sit behind the shared Rauthy-OIDC → Cedar guard.
+
+### Webhook DISPATCHER (Durable Object → portable store)
+
+Verified events are handed to the **Dispatcher**, which durably stores every event in SQLite (the event log = the read/analytics store), fans out to consumers, retries via alarms with backoff, and dead-letters on exhaustion. The store is designed **runtime-agnostic**: the Durable Object is the Cloudflare backend; native runs the same logic over plain SQLite (no CF Queues — pagination/retry uses DO alarms on CF and a tokio loop natively, so it ports cleanly). This is our own dual-runtime replacement for [opensigma](https://github.com/choyiny/opensigma)'s Stripe→D1 mirror.
+
+## Building blocks
+
+- [arlyon/async-stripe](https://github.com/arlyon/async-stripe) — the Rust Stripe client (CF + native backends).
+- [choyiny/opensigma](https://github.com/choyiny/opensigma) — reference for the read/analytics mirror (Sigma + Data Pipeline replacement); we build our own dual-runtime equivalent rather than adopt its CF-Queues coupling.
+- [stripe/stripe-cli](https://github.com/stripe/stripe-cli) — Stripe API + webhook triggers for the bootstrap layer.
+- [joeblew999/cf-connectrpc-middleware](https://github.com/joeblew999/cf-connectrpc-middleware) — the shared ConnectRPC auth/authz middleware (Rauthy OIDC + Cedar) this gateway adopts.
+- [connyay/connectrpc-workers](https://github.com/connyay/connectrpc-workers) — the upstream ConnectRPC-on-Workers runtime the middleware tracks.
+- [joeblew999/google_maps @ feat/cloudflare-workers](https://github.com/joeblew999/google_maps/tree/feat/cloudflare-workers) — the dual-runtime (CF + native) pattern this `service/` codebase mirrors.
+
+## mise tasks
 
 Every mise task is `<noun>:<verb>` so paired operations read obviously together:
 

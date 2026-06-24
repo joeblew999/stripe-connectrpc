@@ -171,14 +171,14 @@ export def configure_portal [] {
 # =============================================================================
 
 export def register_webhook [] {
-    let url_r = (do { fnox get SMP_SERVICE_URL } | complete)
+    let url_r = (do { fnox get STRIPE_SERVICE_URL } | complete)
     if $url_r.exit_code != 0 or (($url_r.stdout | str trim | str length) == 0) {
         # Warn-and-skip rather than fail: apply -- all should succeed when the
         # service hasn't been deployed yet (Phase 4 work). The webhook step
-        # only matters once SMP_SERVICE_URL is populated.
-        print "  ⊘ webhook step skipped — SMP_SERVICE_URL not in keychain (Phase 4)"
+        # only matters once STRIPE_SERVICE_URL is populated.
+        print "  ⊘ webhook step skipped — STRIPE_SERVICE_URL not in keychain (Phase 4)"
         print "    Deploy http-nu+xs to a VPS, then:"
-        print "      fnox set -p keychain SMP_SERVICE_URL 'https://smp.example.com'"
+        print "      fnox set -p keychain STRIPE_SERVICE_URL 'https://smp.example.com'"
         print "      mise run stripe:apply-webhook"
         return
     }

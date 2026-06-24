@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package stripe.v1;
+
+// Provisioning / catalog writes — the typed, idempotent replacement for the
+// stripe-cli nushell loaders (scripts/bootstrap/apply.nu). Admin-only,
+// enforced by Cedar (context.roles must contain "admin").
+service CatalogService {
+  // Idempotent upsert of a product: retrieve-by-id → create or update, tagging
+  // metadata.project for cross-project isolation and ensuring active=true.
+  // Mirrors `stripe products retrieve` → create/update in the nushell loader.
+  rpc UpsertProduct(UpsertProductRequest) returns (UpsertProductResponse);
+
+  // Idempotent upsert of a price BY lookup_key: list-by-lookup_key → create
+  // (new) or update (ensure active + metadata.project; amount/currency/interval
+  // are immutable in Stripe). Mirrors `stripe prices list --lookup-keys` →
+  // create/update in the nushell `seed_prices` loader.
+  rpc UpsertPrice(UpsertPriceRequest) returns (UpsertPriceResponse);
+}
+
+message UpsertPriceRequest {
+  string project     = 1; // metadata.project tag (multi-tenant isolation)
+  string lookup_key  = 2; // idempotency key, e.g. "sports_player_monthly_usd"
+  string product     = 3; // the owning product id
+  int64  unit_amount = 4; // smallest currency unit (cents)
+  string currency    = 5; // ISO code, e.g. "usd"
+  string interval    = 6; // "day"/"week"/"month"/"year" — empty = one-time price
+}
+
+message UpsertPriceResponse {
+  string price_id = 1; // the Stripe price id
+  bool   created  = 2; // true = newly created, false = updated
+}
+
+message UpsertProductRequest {
+  string project     = 1; // metadata.project tag (multi-tenant isolation)
+  string id          = 2; // stable product id, e.g. "sports_coach"
+  string name        = 3;
+  string description = 4;
+  string tax_code    = 5; // e.g. "txcd_10103000"
+}
+
+message UpsertProductResponse {
+  string product_id = 1; // the Stripe product id
+  bool   created    = 2; // true = newly created, false = updated
+}

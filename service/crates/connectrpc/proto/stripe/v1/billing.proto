@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package stripe.v1;
+
+// Subscription / billing lifecycle — the ops a consuming app needs AFTER
+// checkout (self-serve management, subscription queries + cancellation,
+// invoices, refunds). Authed callers (the Rauthy token's user); per-customer
+// scoping is a future Cedar tightening.
+service BillingService {
+  // Create a Stripe Customer Portal session — the hosted page where a customer
+  // self-manages payment methods, plans, and cancellations. Returns the URL to
+  // redirect the buyer to.
+  rpc CreateBillingPortal(CreateBillingPortalRequest) returns (CreateBillingPortalResponse);
+
+  // List a customer's subscriptions (id + status).
+  rpc ListSubscriptions(ListSubscriptionsRequest) returns (ListSubscriptionsResponse);
+
+  // Cancel a subscription immediately. Returns its new status.
+  rpc CancelSubscription(CancelSubscriptionRequest) returns (CancelSubscriptionResponse);
+
+  // List a customer's invoices.
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+
+  // Fetch a customer (id + email + name).
+  rpc GetCustomer(GetCustomerRequest) returns (GetCustomerResponse);
+
+  // Refund a charge or payment intent (admin-only). Empty amount = full refund.
+  rpc CreateRefund(CreateRefundRequest) returns (CreateRefundResponse);
+}
+
+message GetCustomerRequest {
+  string customer = 1; // cus_…
+}
+message GetCustomerResponse {
+  string id    = 1;
+  string email = 2;
+  string name  = 3;
+}
+
+message CreateRefundRequest {
+  string payment_intent = 1; // pi_… (one of payment_intent / charge)
+  string charge         = 2; // ch_…
+  int64  amount         = 3; // smallest currency unit; 0 = full refund
+}
+message CreateRefundResponse {
+  string id     = 1; // re_…
+  string status = 2; // pending / succeeded / failed / canceled
+  int64  amount = 3;
+}
+
+message ListInvoicesRequest {
+  string customer = 1; // Stripe customer id (cus_…)
+}
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+}
+message Invoice {
+  string id                 = 1; // in_…
+  string status             = 2; // draft / open / paid / void / uncollectible
+  int64  total              = 3; // smallest currency unit
+  string number             = 4; // human invoice number
+  string hosted_invoice_url = 5; // Stripe-hosted invoice page
+}
+
+message ListSubscriptionsRequest {
+  string customer = 1; // Stripe customer id (cus_…)
+}
+message ListSubscriptionsResponse {
+  repeated Subscription subscriptions = 1;
+}
+message Subscription {
+  string id     = 1; // sub_…
+  string status = 2; // active / past_due / canceled / …
+}
+
+message CancelSubscriptionRequest {
+  string subscription = 1; // sub_…
+}
+message CancelSubscriptionResponse {
+  string id     = 1;
+  string status = 2; // "canceled" on success
+}
+
+message CreateBillingPortalRequest {
+  string customer   = 1; // Stripe customer id (cus_…)
+  string return_url = 2; // where Stripe sends the buyer back after the portal
+}
+
+message CreateBillingPortalResponse {
+  string url = 1; // the hosted Customer Portal URL
+}

@@ -1,6 +1,6 @@
 # Consumer integration contract
 
-How a consumer repo (e.g. `remy-sport`) talks to stripe-smp in **both directions**. Public API surface for Phase 3 ([ADR-10](ADR.md)).
+How a consumer repo (e.g. `remy-sport`) talks to stripe-connectrpc in **both directions**. Public API surface for Phase 3 ([ADR-10](ADR.md)).
 
 Two routes:
 - **`POST /v1/checkout`** — consumer asks smp to create a Stripe Checkout Session. Bearer auth. Returns a hosted checkout URL the consumer redirects the user to.
@@ -126,7 +126,7 @@ return Response.redirect(url, 303);
 
 ## 3. Verify the signature
 
-stripe-smp sends `Stripe-Signature: t=<unix>,v1=<hex-hmac-sha256>` — the exact format Stripe uses. The signed payload is `<t>.<raw-body>`.
+stripe-connectrpc sends `Stripe-Signature: t=<unix>,v1=<hex-hmac-sha256>` — the exact format Stripe uses. The signed payload is `<t>.<raw-body>`.
 
 ### TypeScript (Workers, Vercel, Node)
 

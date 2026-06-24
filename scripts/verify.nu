@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# stripe-smp environment verification.
+# stripe-connectrpc environment verification.
 #
 #   nu scripts/verify.nu          # quick: tools + Stripe keychain entries
 #   nu scripts/verify.nu --all    # exhaustive: run every non-interactive mise task
@@ -48,7 +48,7 @@ def check_secret [name: string, --optional] {
 def quick [] {
     mut fails = 0
 
-    print "stripe-smp environment check"
+    print "stripe-connectrpc environment check"
     print "============================"
 
     print "\nrequired tools (Stripe + http-nu/xs runtime):"
@@ -106,7 +106,7 @@ def verify_all [] {
         {name: "stripe:apply-prices"}
         {name: "stripe:apply-portal"}
         {name: "stripe:apply-payment-methods"}
-        {name: "stripe:apply-webhook", skip: true, note: "needs SMP_SERVICE_URL"}
+        {name: "stripe:apply-webhook", skip: true, note: "needs STRIPE_SERVICE_URL"}
         {name: "stripe:bootstrap"}
         {name: "stripe:verify-state"}
         {name: "stripe:teardown",         skip: true, note: "destructive (archives products); run manually if you want"}
@@ -167,7 +167,7 @@ def verify_all [] {
         {name: "open:stripe-onboard"}
         {name: "open:stripe-payment-methods"}
         {name: "open:stripe-products"}
-        {name: "open:stripe-smp"}
+        {name: "open:stripe-connectrpc"}
         {name: "open:stripe-webhooks"}
 
         # cf:* (alternative runtime)

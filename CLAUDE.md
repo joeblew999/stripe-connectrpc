@@ -4,9 +4,13 @@ Context for Claude (and humans) working in this repo.
 
 ## What this is
 
-**stripe-smp** — Stripe Managed Payments shared service. The runtime is **http-nu + xs** (cablehead's stack); the bootstrap layer is mise + nushell + fnox + stripe-cli driven by JSONL. The Cloudflare Workers scaffold lives under `alt-runtime/cloudflare/` and is retained as an alternative runtime for if/when we want CDN edge deployment.
+**stripe-connectrpc** (renamed 2026-06-23: `smp` → `stripe-smp` → `stripe-connectrpc`; old GitHub URLs redirect) — a Stripe gateway projects call instead of Stripe directly. The original runtime is **http-nu + xs** (cablehead's stack); the bootstrap layer is mise + nushell + fnox + stripe-cli driven by JSONL. The crates / proto package / env vars are now `stripe-*` / `stripe.v1` / `STRIPE_*`. NOTE: `SMP` in the docs/data means **Stripe Managed Payments** (a real Stripe product/mode) and is kept as-is; only the old `smp` *project nickname* was renamed to `stripe`. Some doc prose + `scripts/` may still carry the old nickname.
+
+The **Rust ConnectRPC gateway** lives under `service/` — a cargo workspace (mirroring google_maps feat/cloudflare-workers): `crates/connectrpc/` is the reusable service (proto + handlers + `TokenAuthLayer`), and it runs on **both** Cloudflare Workers (`service/worker/`, `cf:*` tasks) and **native** tokio/hyper (`service/native/`, `native:*` tasks) from one codebase — transport swapped by Cargo feature (`worker` = `worker::Fetch`, `native` = reqwest). Consuming projects codegen typed clients (and a Kumo GUI) from `service/crates/connectrpc/proto/stripe/v1/checkout.proto`. Stripe calls go through async-stripe (`arlyon/async-stripe`).
 
 Stripe is merchant of record. Consumer apps call smp; smp owns the Stripe account, the keys, and the webhook surface. Web apps never embed Stripe.js.
+
+**Write vs read split.** Everything above is the **write/mutation** side. The **read/analytics** side is [opensigma](https://github.com/choyiny/opensigma), vendored (gitignored) into `.src/opensigma` via `mise run sigma:src` and driven by the `sigma:*` tasks — it mirrors the Stripe account into Cloudflare D1 (free Stripe Sigma replacement). opensigma subscribes to Stripe **directly** (own webhook + read-only `rk_` key), independent of smp's dispatcher — see Decision 13 in `docs/ADR.md`. Pristine upstream, zero source edits, no fork.
 
 ## Stack
 
@@ -45,8 +49,10 @@ scripts/
 ├── verify.nu                 ← env check (quick) + verify:all (exhaustive)
 └── onboard.nu                ← interactive secret prompts
 
-alt-runtime/
-└── cloudflare/               ← alt runtime (cf:* tasks); cargo/src/wrangler live here
+service/                      ← Rust ConnectRPC gateway (CF + native)
+├── crates/connectrpc/        ← reusable service: proto + handlers + TokenAuthLayer
+├── worker/                   ← CF Worker entry (cf:* tasks; wrangler)
+└── native/                   ← native tokio/hyper entry (native:* tasks)
 
 docs/
 ├── ADR.md                    ← Decisions 1–10 (latest: consumer fan-out model)
@@ -70,6 +76,7 @@ data/
   - `mise run test:*` — sandbox HIL flows (checkout, rpc-checkout…)
   - `mise run daemons:*` — pitchfork runtime supervision (up, down, restart-*)
   - `mise run xs:* / dispatch:* / rpc:*` — event store + audit trails
+  - `mise run sigma:*` — opensigma read/analytics side (`sigma:src` to vendor it, `sigma:eval` to offline-test, `sigma:deploy` for live)
 - **Declarative data is JSONL** under `data/`:
   - `data/reference/*.jsonl` — Stripe-sourced; hand-edit after eyeballing the source page.
   - `data/config/*.jsonl` — our config; applied to Stripe via `apply -- *`.
