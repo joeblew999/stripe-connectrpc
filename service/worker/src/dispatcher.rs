@@ -27,30 +27,6 @@ const MAX_ATTEMPTS: i64 = 5;
 /// Backoff between retry rounds while events remain pending.
 const RETRY_BACKOFF: Duration = Duration::from_secs(30);
 
-/// Stripe REST list endpoints to backfill (ADR-14 brick 2). Each returns
-/// `{ object: "list", data: [...], has_more }`; items carry their own `object`
-/// discriminator, so `mirror::apply_object` routes each to the right table.
-const BACKFILL_ENDPOINTS: &[&str] = &[
-    "/v1/products",
-    "/v1/prices",
-    "/v1/customers",
-    "/v1/charges",
-    "/v1/invoices",
-    "/v1/subscriptions",
-    "/v1/payment_intents",
-    "/v1/checkout/sessions",
-    "/v1/refunds",
-    "/v1/payouts",
-    "/v1/balance_transactions",
-    "/v1/disputes",
-    "/v1/coupons",
-    "/v1/promotion_codes",
-    "/v1/setup_intents",
-    "/v1/credit_notes",
-    "/v1/radar/early_fraud_warnings",
-    "/v1/reviews",
-];
-
 #[durable_object]
 pub struct Dispatcher {
     state: State,
@@ -201,7 +177,7 @@ impl Dispatcher {
         mirror::ensure_schema(&store).map_err(worker::Error::RustError)?;
         let now = Date::now().as_millis() as i64;
         let mut total = 0u32;
-        for path in BACKFILL_ENDPOINTS {
+        for path in mirror::BACKFILL_ENDPOINTS {
             let mut after: Option<String> = None;
             for _ in 0..20 {
                 let url = match &after {

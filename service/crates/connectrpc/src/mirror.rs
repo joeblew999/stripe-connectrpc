@@ -134,6 +134,30 @@ pub fn table_names() -> Vec<&'static str> {
     RESOURCES.iter().map(|r| r.table).collect()
 }
 
+/// Stripe REST list endpoints to backfill (ADR-14 brick 2), shared by both
+/// runtimes. Each returns `{ object: "list", data: [...], has_more }`; items
+/// carry their own `object` discriminator, so `apply_object` routes each.
+pub const BACKFILL_ENDPOINTS: &[&str] = &[
+    "/v1/products",
+    "/v1/prices",
+    "/v1/customers",
+    "/v1/charges",
+    "/v1/invoices",
+    "/v1/subscriptions",
+    "/v1/payment_intents",
+    "/v1/checkout/sessions",
+    "/v1/refunds",
+    "/v1/payouts",
+    "/v1/balance_transactions",
+    "/v1/disputes",
+    "/v1/coupons",
+    "/v1/promotion_codes",
+    "/v1/setup_intents",
+    "/v1/credit_notes",
+    "/v1/radar/early_fraud_warnings",
+    "/v1/reviews",
+];
+
 /// `CREATE TABLE IF NOT EXISTS` + indexes for every mirrored resource. Idempotent.
 pub fn ensure_schema(exec: &impl SqlExec) -> Result<(), String> {
     for r in RESOURCES {

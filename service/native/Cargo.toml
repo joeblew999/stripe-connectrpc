@@ -11,6 +11,10 @@ stripe-connectrpc = { path = "../crates/connectrpc", features = ["native"] }
 connectrpc = { version = "0.7", default-features = false }
 hyper      = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["server", "tokio", "service"] }
-ureq       = "2"
+ureq       = { version = "2", features = ["json"] }
+# Brick 4: the native SQLite backend for the Sigma mirror (bundled = no system
+# libsqlite). Proves the mirror runs identically off-CF, no Durable Object.
+rusqlite   = { version = "0.31", features = ["bundled"] }
+serde_json = "1"
 tokio      = { version = "1", features = ["rt", "net", "macros"] }
 tower      = { version = "0.5", default-features = false, features = ["util"] }

@@ -18,12 +18,23 @@ use stripe_connectrpc::{
 };
 use tokio::net::TcpListener;
 
+mod sigma;
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // `stripe-native backfill [db]` runs the native Sigma mirror backfill
+    // (brick 4) — plain SQLite, no Durable Object, no Rauthy. The default path
+    // below serves the guarded RPC and needs Rauthy.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("backfill") {
+        let db = args.get(2).cloned().unwrap_or_else(|| "sigma.db".to_string());
+        return sigma::backfill(&db);
+    }
+
     let key = std::env::var("STRIPE_SECRET_KEY").unwrap_or_default();
     let issuer = std::env::var("RAUTHY_ISSUER").expect("set RAUTHY_ISSUER");
     let jwks_url = std::env::var("RAUTHY_JWKS_URL").expect("set RAUTHY_JWKS_URL");
