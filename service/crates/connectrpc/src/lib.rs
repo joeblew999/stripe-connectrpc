@@ -36,7 +36,14 @@ pub mod mirror;
 
 // Server side (CF or native).
 #[cfg(feature = "_server")]
-pub use proto::stripe::v1::{BillingServiceExt, CatalogServiceExt, CheckoutServiceExt};
+pub use proto::stripe::v1::{
+    BillingServiceExt, CatalogServiceExt, CheckoutServiceExt, SigmaServiceExt,
+};
+// SigmaService server (ADR-14 brick 3) — generic over the read backend.
+#[cfg(feature = "_server")]
+mod sigma;
+#[cfg(feature = "_server")]
+pub use sigma::{is_read_only, QueryResult, SigmaServer, SigmaStore};
 #[cfg(feature = "_server")]
 mod server;
 #[cfg(feature = "_server")]

@@ -4,8 +4,11 @@
 //! that runs inside the Cloudflare Durable Object runs here over plain rusqlite
 //! SQLite — no Durable Object, no CF Queues. `stripe-native backfill [db]`.
 
+use std::sync::Mutex;
+
 use rusqlite::{Connection, ToSql};
 use stripe_connectrpc::mirror::{self, SqlExec, SqlValue};
+use stripe_connectrpc::{QueryResult, SigmaStore};
 
 /// Adapts rusqlite to the runtime-agnostic [`SqlExec`] trait — the native twin
 /// of the DO's `DoSql`.
@@ -30,6 +33,81 @@ impl SqlExec for Sqlite {
             .map(|_| ())
             .map_err(|e| e.to_string())
     }
+}
+
+/// The native read backend for `SigmaService` — plain rusqlite. The twin of the
+/// worker's DoStore; both satisfy `stripe_connectrpc::SigmaStore`. `Mutex` makes
+/// it `Sync` (and the futures `Send`) — fine for a read store.
+pub struct SqliteStore(pub Mutex<Connection>);
+
+impl SqliteStore {
+    pub fn open(db_path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(Self(Mutex::new(Connection::open(db_path)?)))
+    }
+}
+
+fn value_to_string(v: &rusqlite::types::Value) -> String {
+    use rusqlite::types::Value;
+    match v {
+        Value::Null => String::new(),
+        Value::Integer(i) => i.to_string(),
+        Value::Real(f) => f.to_string(),
+        Value::Text(s) => s.clone(),
+        Value::Blob(_) => "<blob>".to_string(),
+    }
+}
+
+impl SigmaStore for SqliteStore {
+    async fn query(&self, sql: &str, limit: u32) -> Result<QueryResult, String> {
+        let conn = self.0.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+        let n = columns.len();
+        let mut cursor = stmt.query([]).map_err(|e| e.to_string())?;
+        let mut rows = Vec::new();
+        while let Some(row) = cursor.next().map_err(|e| e.to_string())? {
+            let mut cells = Vec::with_capacity(n);
+            for i in 0..n {
+                let v: rusqlite::types::Value = row.get(i).map_err(|e| e.to_string())?;
+                cells.push(value_to_string(&v));
+            }
+            rows.push(cells);
+            if rows.len() >= limit as usize {
+                break;
+            }
+        }
+        Ok(QueryResult { columns, rows })
+    }
+
+    async fn counts(&self) -> Result<Vec<(String, i64)>, String> {
+        let conn = self.0.lock().map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for table in mirror::table_names() {
+            let c: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap_or(0);
+            out.push((table.to_string(), c));
+        }
+        Ok(out)
+    }
+}
+
+/// `stripe-native query <db> <sql>` — run a read-only query through the native
+/// SigmaStore and print it. Proves the RunQuery path on real mirror data, no
+/// Rauthy, no Durable Object.
+pub async fn query_cli(db_path: &str, sql: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if !stripe_connectrpc::is_read_only(sql) {
+        return Err("only a single read-only SELECT/WITH is allowed".into());
+    }
+    let store = SqliteStore::open(db_path)?;
+    let res = store.query(sql, 50).await.map_err(boxed)?;
+    println!("{}", res.columns.join(" | "));
+    println!("{}", "-".repeat(res.columns.join(" | ").len().max(3)));
+    for row in &res.rows {
+        println!("{}", row.join(" | "));
+    }
+    println!("({} rows)", res.rows.len());
+    Ok(())
 }
 
 fn now_ms() -> i64 {

@@ -54,6 +54,15 @@ struct Count {
     c: i64,
 }
 
+/// Stringify a JSON cell for the `/query` result grid.
+fn json_cell(v: Option<&serde_json::Value>) -> String {
+    match v {
+        None | Some(serde_json::Value::Null) => String::new(),
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
 /// Adapts the Durable Object's SQLite to the runtime-agnostic `SqlExec` trait,
 /// so the shared `mirror` logic runs unchanged on Cloudflare.
 struct DoSql(SqlStorage);
@@ -168,6 +177,41 @@ impl Dispatcher {
         Response::from_json(&serde_json::Value::Object(counts))
     }
 
+    /// POST /query (x-sigma-op: query) — run a read-only SQL query and return
+    /// `{ columns, rows }` (cells stringified). Reached only via the guarded
+    /// SigmaService.RunQuery, which validates SELECT-only before forwarding.
+    async fn query(&self, mut req: Request) -> Result<Response> {
+        #[derive(Deserialize)]
+        struct Q {
+            sql: String,
+            #[serde(default)]
+            limit: u32,
+        }
+        let q: Q = req.json().await?;
+        let rows_json: Vec<serde_json::Value> =
+            self.state.storage().sql().exec(&q.sql, None)?.to_array()?;
+        let columns: Vec<String> = rows_json
+            .first()
+            .and_then(|v| v.as_object())
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        let cap = if q.limit == 0 {
+            usize::MAX
+        } else {
+            q.limit as usize
+        };
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for v in &rows_json {
+            if rows.len() >= cap {
+                break;
+            }
+            if let Some(obj) = v.as_object() {
+                rows.push(columns.iter().map(|c| json_cell(obj.get(c))).collect());
+            }
+        }
+        Response::from_json(&serde_json::json!({ "columns": columns, "rows": rows }))
+    }
+
     /// POST /backfill — seed the mirror from Stripe's REST API (ADR-14 brick 2).
     /// Paginates each list endpoint and upserts every object. Synchronous here
     /// (fine for the test account); large accounts would page via alarms.
@@ -234,6 +278,7 @@ impl DurableObject for Dispatcher {
         match op.as_str() {
             "status" => self.status().await,
             "backfill" => self.backfill().await,
+            "query" => self.query(req).await,
             _ => self.ingest(req).await,
         }
     }

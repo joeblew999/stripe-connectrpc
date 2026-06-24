@@ -14,7 +14,7 @@ use hyper_util::rt::TokioIo;
 use hyper_util::service::TowerToHyperService;
 use stripe_connectrpc::{
     guard, BillingServer, BillingServiceExt, CatalogServer, CatalogServiceExt, CheckoutServer,
-    CheckoutServiceExt, JwksVerifier, StripeBackend,
+    CheckoutServiceExt, JwksVerifier, SigmaServer, SigmaServiceExt, StripeBackend,
 };
 use tokio::net::TcpListener;
 
@@ -34,6 +34,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let db = args.get(2).cloned().unwrap_or_else(|| "sigma.db".to_string());
         return sigma::backfill(&db);
     }
+    if args.get(1).map(String::as_str) == Some("query") {
+        let db = args.get(2).cloned().unwrap_or_else(|| "sigma.db".to_string());
+        let sql = args.get(3).cloned().unwrap_or_default();
+        return sigma::query_cli(&db, &sql).await;
+    }
 
     let key = std::env::var("STRIPE_SECRET_KEY").unwrap_or_default();
     let issuer = std::env::var("RAUTHY_ISSUER").expect("set RAUTHY_ISSUER");
@@ -50,6 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let router = Arc::new(CheckoutServer::new(client.clone())).register(router);
     let router = Arc::new(CatalogServer::new(client.clone())).register(router);
     let router = Arc::new(BillingServer::new(client)).register(router);
+    // SigmaService reads the native mirror (rusqlite). Same guarded surface as
+    // the worker's DO-backed SigmaService.
+    let sigma_db = env_or("SIGMA_DB", "sigma.db");
+    let router = Arc::new(SigmaServer::new(sigma::SqliteStore::open(&sigma_db)?)).register(router);
     let svc = guard::<_, hyper::body::Incoming>(verifier, ConnectRpcService::new(router));
 
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;

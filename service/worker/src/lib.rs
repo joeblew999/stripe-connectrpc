@@ -9,7 +9,7 @@ use connectrpc::{ConnectRpcBody, ConnectRpcService, Router as RpcRouter};
 use http_body_util::Full;
 use stripe_connectrpc::{
     guard, BillingServer, BillingServiceExt, CatalogServer, CatalogServiceExt, CheckoutServer,
-    CheckoutServiceExt, JwksVerifier, StripeBackend,
+    CheckoutServiceExt, JwksVerifier, SigmaServer, SigmaServiceExt, StripeBackend,
 };
 use tokio::sync::OnceCell;
 use tower::Service;
@@ -17,6 +17,8 @@ use worker::{event, Context, Env, HttpRequest};
 
 // The webhook DISPATCHER Durable Object (durable event log + fan-out + retry).
 mod dispatcher;
+// The CF read backend for SigmaService — forwards queries to the DO.
+mod sigma_store;
 
 // Build the Rauthy JWKS verifier once (fetched via worker::Fetch). Env:
 // RAUTHY_ISSUER, RAUTHY_JWKS_URL, RAUTHY_AUD (optional).
@@ -172,6 +174,16 @@ async fn fetch(
     let router = Arc::new(CheckoutServer::new(client.clone())).register(router);
     let router = Arc::new(CatalogServer::new(client.clone())).register(router);
     let router = Arc::new(BillingServer::new(client)).register(router);
+    // SigmaService reads the mirror via the Dispatcher DO (same guarded surface
+    // the native host serves over rusqlite).
+    let sigma_stub = env
+        .durable_object("DISPATCHER")?
+        .id_from_name("global")?
+        .get_stub()?;
+    let sigma_store = sigma_store::DoStore {
+        stub: worker::send::SendWrapper::new(sigma_stub),
+    };
+    let router = Arc::new(SigmaServer::new(sigma_store)).register(router);
 
     // Shared guard: Rauthy JWT verify → Cedar authz → the ConnectRPC service.
     let verifier = verifier(&env).await?;
