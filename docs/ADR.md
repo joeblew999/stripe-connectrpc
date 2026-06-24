@@ -181,7 +181,7 @@ After 7 total attempts (~1.6 days), `.dead-lettered` is emitted and the chain st
 
 ## Decision 13 — opensigma read/analytics side, vendored via `.src/` — 2026-06-20
 
-**Status:** ACCEPTED — **running locally against the real test account** (not yet deployed to Cloudflare). Wired into `mise.toml` as the `sigma:*` task group + `.src/` gitignored.
+**Status:** ~~ACCEPTED~~ **SUPERSEDED by Decision 14 (2026-06-24)** — kept as the evaluation record. opensigma stays in `.src/opensigma` as *reference*, no longer the planned read side (its CF-Queues + TS coupling fails the dual-runtime requirement).
 
 **Proven 2026-06-20 (local run, no Workers Paid, no deploy):** `wrangler dev` (miniflare emulates D1 + Queues) reusing smp's own `STRIPE_API_KEY` + `STRIPE_WEBHOOK_SECRET` keychain items (opensigma reads the identical env var names). Flow: `sigma:dev-vars` (gen ephemeral `.dev.vars` from keychain) → `sigma:db-local` (migrate local D1) → `sigma:dev` (bg) → `sigma:backload` (curl the scheduled handler) → `sigma:d1` (query). Result: **19 resources mirrored from `acct_1QJrzxABkTiOs5on` test mode into local D1** — 95 checkout_sessions, 64 prices, 55 products, 41 balance_transactions, 38 payment_intents, 34 charges, 19 customers, 1 subscription, 1 invoice. Charge IDs carry the account suffix (`ch_3Tce…ABkTiOs5on…`), confirming real-account data.
 
@@ -204,8 +204,27 @@ Zero source edits means upstream stays pristine. `mise run sigma:src` git-clones
 
 **Live deploy (not yet done — but no longer plan-blocked):** Cloudflare **Queues are on the free Workers plan since 2026-02-04** (10k ops/day, 24h retention) — an earlier note here wrongly claimed Queues needed Workers Paid; corrected after verifying Cloudflare's changelog. So a full live deploy can run at $0 within free-tier limits. Needs a read-only `rk_` key on AU acct `acct_1QJrzxABkTiOs5on` + a webhook signing secret, both via fnox keychain (items `SIGMA_STRIPE_API_KEY` / `SIGMA_STRIPE_WEBHOOK_SECRET`). Live path: `sigma:d1-create → sigma:secrets → sigma:db-migrate → sigma:deploy`.
 
+## Decision 14 — build our own dual-runtime read/analytics store (supersedes 13) — 2026-06-24
+
+**Status:** ACCEPTED. Write side is **LIVE on Cloudflare** at `https://stripe-connectrpc.gedw99.workers.dev` (Rust ConnectRPC gateway + webhook Dispatcher DO; real Stripe event verified end-to-end). The read/analytics store is now ours to build, not opensigma to adopt.
+
+**Why supersede Decision 13:** opensigma is excellent reference, but two of its properties are disqualifying for this estate:
+1. **CF-Queues coupling.** Its historical backfill is a `cron → CF Queue → consumer → upsert` loop. **CF Queues is Cloudflare-only** — it cannot run on the native target. ConnectRPC (and therefore this whole gateway) is deliberately **dual-runtime (CF + native)**; a read store that only runs on CF breaks that invariant. Avoiding Queues for exactly this reason was an explicit instruction.
+2. **TypeScript / second stack.** opensigma is TS/Hono/Drizzle. Adopting it adds a node/pnpm toolchain alongside the Rust gateway. Building our own keeps **one stack** (Rust, async-stripe) and lets the read store share the gateway's types + transport.
+
+**What we build (must reach opensigma feature-parity):**
+- **Typed resource tables** — a relational mirror (customers, charges, invoices, subscriptions, payment_intents, prices, products, payouts, disputes, refunds, … ~20 types), upserted from events. Not just a raw event log.
+- **Live freshness via webhooks** — the Dispatcher already ingests every verified event; parse + upsert into the resource tables from that same path.
+- **Historical backfill** — paginate the Stripe REST API to seed/repair the tables. **Driven by DO alarms on CF and a tokio loop natively — no CF Queues.**
+- **Queryable** — it's SQLite; expose SQL (and later an auth-gated ConnectRPC `AnalyticsService` / NL query).
+
+**Dual-runtime shape:** a runtime-agnostic `EventStore` (shared schema + upsert SQL) with two backends — **CF = the Dispatcher DO** (`state.storage().sql()` + alarms), **native = plain SQLite** (rusqlite/libsql) + a tokio interval. SQLite is SQLite; the SQL ports unchanged. Only the handle, the timer, and the HTTP fetch (worker::Fetch vs reqwest, already abstracted) differ per runtime.
+
+**opensigma's role now:** stays vendored in `.src/opensigma` purely as a schema/upsert reference (which fields each resource needs, which events touch which table). We read it; we don't ship it. `sigma:*` tasks remain for cross-checking our mirror against its output on the same test account.
+
 ## Revisions
 
+- **2026-06-24** — **Decision 14 added + ACCEPTED; Decision 13 superseded.** Write side deployed LIVE to CF as `stripe-connectrpc` (renamed off `smp`): Rust ConnectRPC gateway + webhook Dispatcher Durable Object (durable SQLite event log + fan-out + alarm retry/backoff + dead-letter). Real `product.created`/`price.created` events verified end-to-end (HMAC verify → DO ingest → 200). Read/analytics side flips from "adopt opensigma" to "build our own dual-runtime store (no CF Queues)" — opensigma demoted to reference.
 - **2026-06-23** — alt-runtime (Cloudflare/Rust, Decision 1's path) outbound keystone built + proven: `src/stripe_client.rs` = `WorkerStripeClient` implementing async-stripe's `StripeClient` over `worker::Fetch` (`!Send`→`Send` via `worker::send::SendFuture`). New `GET /v1/sessions` route runs a real `ListCheckoutSession` → `wrangler dev` returned `10 checkout sessions` (200) from a live Stripe call. Pinned `worker-build =0.8.4` (0.8.5 emits `--force-enable-abort-handler`, rejected by the `wasm-bindgen 0.2.122` that `worker="0.8"` locks). The "Rust-on-CF is hard" premise behind Decision 9's pivot is disproven.
 - **2026-06-20** — Decision 13 added + ACCEPTED, then proven RUNNING locally against the real test account (19 resources mirrored into local D1 via `wrangler dev`). opensigma vendored as the read/analytics side via `sigma:*` tasks + `.src/opensigma`; subscribes to Stripe directly (not through smp); offline eval green (87 tests). Corrected the Queues=Workers-Paid claim — Queues are free-tier since 2026-02-04. Live deploy pending only creds.
 - **2026-05-29** — Decision 12 added + ACCEPTED. Retry + dead-letter live; full backoff chain verified through attempt 3, dead-letter verified via synthetic attempt=7 injection.

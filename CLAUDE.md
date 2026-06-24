@@ -10,7 +10,7 @@ The **Rust ConnectRPC gateway** lives under `service/` — a cargo workspace (mi
 
 Stripe is merchant of record. Consumer apps call smp; smp owns the Stripe account, the keys, and the webhook surface. Web apps never embed Stripe.js.
 
-**Write vs read split.** Everything above is the **write/mutation** side. The **read/analytics** side is [opensigma](https://github.com/choyiny/opensigma), vendored (gitignored) into `.src/opensigma` via `mise run sigma:src` and driven by the `sigma:*` tasks — it mirrors the Stripe account into Cloudflare D1 (free Stripe Sigma replacement). opensigma subscribes to Stripe **directly** (own webhook + read-only `rk_` key), independent of smp's dispatcher — see Decision 13 in `docs/ADR.md`. Pristine upstream, zero source edits, no fork.
+**Write vs read split.** Everything above is the **write/mutation** side, now **LIVE on Cloudflare** at `https://stripe-connectrpc.gedw99.workers.dev` (Rust ConnectRPC gateway + webhook **Dispatcher Durable Object**: durable SQLite event log + fan-out + alarm retry + dead-letter). The **read/analytics** side is **ours to build** — a dual-runtime relational Stripe mirror (typed resource tables, webhook-fresh + REST backfill, **no CF Queues** so it ports CF↔native), see **Decision 14** in `docs/ADR.md`. [opensigma](https://github.com/choyiny/opensigma) (vendored in `.src/opensigma` via `sigma:*`) is now **reference only** — we read its per-resource upsert/schema modules; we don't ship it (Decision 13 superseded: its CF-Queues + TS coupling fails the dual-runtime requirement).
 
 ## Stack
 
