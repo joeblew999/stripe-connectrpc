@@ -16,15 +16,40 @@
 use std::time::Duration;
 
 use serde::Deserialize;
+use stripe_connectrpc::mirror::{self, SqlExec, SqlValue};
 use worker::{
-    durable_object, Date, DurableObject, Env, Fetch, Method, Request, RequestInit, Response,
-    Result, State,
+    durable_object, Date, DurableObject, Env, Fetch, Headers, Method, Request, RequestInit,
+    Response, Result, SqlStorage, SqlStorageValue, State,
 };
 
 /// Give up (dead-letter) after this many failed delivery rounds.
 const MAX_ATTEMPTS: i64 = 5;
 /// Backoff between retry rounds while events remain pending.
 const RETRY_BACKOFF: Duration = Duration::from_secs(30);
+
+/// Stripe REST list endpoints to backfill (ADR-14 brick 2). Each returns
+/// `{ object: "list", data: [...], has_more }`; items carry their own `object`
+/// discriminator, so `mirror::apply_object` routes each to the right table.
+const BACKFILL_ENDPOINTS: &[&str] = &[
+    "/v1/products",
+    "/v1/prices",
+    "/v1/customers",
+    "/v1/charges",
+    "/v1/invoices",
+    "/v1/subscriptions",
+    "/v1/payment_intents",
+    "/v1/checkout/sessions",
+    "/v1/refunds",
+    "/v1/payouts",
+    "/v1/balance_transactions",
+    "/v1/disputes",
+    "/v1/coupons",
+    "/v1/promotion_codes",
+    "/v1/setup_intents",
+    "/v1/credit_notes",
+    "/v1/radar/early_fraud_warnings",
+    "/v1/reviews",
+];
 
 #[durable_object]
 pub struct Dispatcher {
@@ -51,6 +76,28 @@ struct EventRow {
 #[derive(Deserialize)]
 struct Count {
     c: i64,
+}
+
+/// Adapts the Durable Object's SQLite to the runtime-agnostic `SqlExec` trait,
+/// so the shared `mirror` logic runs unchanged on Cloudflare.
+struct DoSql(SqlStorage);
+
+impl SqlExec for DoSql {
+    fn run(&self, sql: &str, params: &[SqlValue]) -> std::result::Result<(), String> {
+        let binds: Vec<SqlStorageValue> = params
+            .iter()
+            .map(|p| match p {
+                SqlValue::Text(s) => SqlStorageValue::from(s.clone()),
+                SqlValue::Int(n) => SqlStorageValue::from(*n),
+                SqlValue::Real(f) => SqlStorageValue::from(*f),
+                SqlValue::Null => SqlStorageValue::Null,
+            })
+            .collect();
+        self.0
+            .exec(sql, Some(binds))
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
 }
 
 impl Dispatcher {
@@ -93,6 +140,105 @@ impl Dispatcher {
             Err(_) => false,
         }
     }
+
+    /// POST /ingest — store a verified event (raw log + typed mirror), then arm
+    /// the dispatcher.
+    async fn ingest(&self, mut req: Request) -> Result<Response> {
+        let ev: ForwardedEvent = req.json().await?;
+        let now = Date::now().as_millis() as i64;
+        self.ensure_schema()?;
+        // Raw event log — INSERT OR IGNORE → idempotent on Stripe's event id
+        // (Stripe retries the same id, and so will our own dispatcher).
+        self.state.storage().sql().exec(
+            "INSERT OR IGNORE INTO events (id, event_type, payload, received_at) \
+             VALUES (?, ?, ?, ?)",
+            vec![
+                ev.id.into(),
+                ev.event_type.into(),
+                ev.payload.clone().into(),
+                now.into(),
+            ],
+        )?;
+        // Typed resource mirror — the SigmaService read/analytics store. Same
+        // logic native runs over plain SQLite; here it's the DO's SQLite.
+        let store = DoSql(self.state.storage().sql());
+        mirror::ensure_schema(&store).map_err(worker::Error::RustError)?;
+        mirror::apply_event(&store, &ev.payload, now).map_err(worker::Error::RustError)?;
+        // Wake the dispatcher ASAP, unless an alarm is already pending.
+        if self.state.storage().get_alarm().await?.is_none() {
+            self.state.storage().set_alarm(Duration::from_secs(0)).await?;
+        }
+        Response::ok("stored")
+    }
+
+    /// GET /status — row counts per mirrored table (ops view + the data behind
+    /// SigmaService.GetSyncStatus).
+    async fn status(&self) -> Result<Response> {
+        let store = DoSql(self.state.storage().sql());
+        mirror::ensure_schema(&store).map_err(worker::Error::RustError)?;
+        let mut counts = serde_json::Map::new();
+        for table in mirror::table_names() {
+            let rows: Vec<Count> = self
+                .state
+                .storage()
+                .sql()
+                .exec(&format!("SELECT count(*) AS c FROM {table}"), None)?
+                .to_array()?;
+            counts.insert(
+                table.to_string(),
+                rows.first().map(|c| c.c).unwrap_or(0).into(),
+            );
+        }
+        Response::from_json(&serde_json::Value::Object(counts))
+    }
+
+    /// POST /backfill — seed the mirror from Stripe's REST API (ADR-14 brick 2).
+    /// Paginates each list endpoint and upserts every object. Synchronous here
+    /// (fine for the test account); large accounts would page via alarms.
+    async fn backfill(&self) -> Result<Response> {
+        let key = self.env.secret("STRIPE_SECRET_KEY")?.to_string();
+        let store = DoSql(self.state.storage().sql());
+        mirror::ensure_schema(&store).map_err(worker::Error::RustError)?;
+        let now = Date::now().as_millis() as i64;
+        let mut total = 0u32;
+        for path in BACKFILL_ENDPOINTS {
+            let mut after: Option<String> = None;
+            for _ in 0..20 {
+                let url = match &after {
+                    Some(a) => {
+                        format!("https://api.stripe.com{path}?limit=100&starting_after={a}")
+                    }
+                    None => format!("https://api.stripe.com{path}?limit=100"),
+                };
+                let headers = Headers::new();
+                headers.set("Authorization", &format!("Bearer {key}"))?;
+                let mut init = RequestInit::new();
+                init.with_method(Method::Get).with_headers(headers);
+                let req = Request::new_with_init(&url, &init)?;
+                let mut resp = Fetch::Request(req).send().await?;
+                if resp.status_code() != 200 {
+                    break; // resource not enabled on this account — skip it
+                }
+                let body: serde_json::Value = resp.json().await?;
+                let data = match body.get("data").and_then(|d| d.as_array()) {
+                    Some(d) if !d.is_empty() => d,
+                    _ => break,
+                };
+                for obj in data {
+                    if mirror::apply_object(&store, obj, now).map_err(worker::Error::RustError)? {
+                        total += 1;
+                    }
+                }
+                let has_more = body.get("has_more").and_then(|h| h.as_bool()).unwrap_or(false);
+                let last = data.last().and_then(|o| o.get("id")).and_then(|i| i.as_str());
+                match (has_more, last) {
+                    (true, Some(id)) => after = Some(id.to_string()),
+                    _ => break,
+                }
+            }
+        }
+        Response::from_json(&serde_json::json!({ "backfilled": total }))
+    }
 }
 
 impl DurableObject for Dispatcher {
@@ -100,26 +246,20 @@ impl DurableObject for Dispatcher {
         Self { state, env }
     }
 
-    async fn fetch(&self, mut req: Request) -> Result<Response> {
-        let ev: ForwardedEvent = req.json().await?;
-        self.ensure_schema()?;
-        // INSERT OR IGNORE → idempotent on Stripe's event id (Stripe retries the
-        // same id, and so will our own dispatcher).
-        self.state.storage().sql().exec(
-            "INSERT OR IGNORE INTO events (id, event_type, payload, received_at) \
-             VALUES (?, ?, ?, ?)",
-            vec![
-                ev.id.into(),
-                ev.event_type.into(),
-                ev.payload.into(),
-                (Date::now().as_millis() as i64).into(),
-            ],
-        )?;
-        // Wake the dispatcher ASAP, unless an alarm is already pending.
-        if self.state.storage().get_alarm().await?.is_none() {
-            self.state.storage().set_alarm(Duration::from_secs(0)).await?;
+    async fn fetch(&self, req: Request) -> Result<Response> {
+        // The Worker tags the forwarded request with `x-sigma-op` (the URL path
+        // does not survive the DO stub hop). Default = ingest a verified event.
+        let op = req
+            .headers()
+            .get("x-sigma-op")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        match op.as_str() {
+            "status" => self.status().await,
+            "backfill" => self.backfill().await,
+            _ => self.ingest(req).await,
         }
-        Response::ok("stored")
     }
 
     async fn alarm(&self) -> Result<Response> {

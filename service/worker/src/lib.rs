@@ -77,6 +77,36 @@ async fn fetch(
             .map_err(|e| worker::Error::RustError(format!("health: {e}")));
     }
 
+    // Sigma read/analytics ops — forwarded to the Dispatcher DO. /status (row
+    // counts) and /backfill (seed the mirror from Stripe REST) are low-
+    // sensitivity ops endpoints; the typed, data-returning RunQuery is the
+    // guarded SigmaService RPC.
+    if matches!(req.uri().path(), "/v1/sigma/status" | "/v1/sigma/backfill") {
+        let (op, method) = if req.uri().path() == "/v1/sigma/backfill" {
+            ("backfill", worker::Method::Post)
+        } else {
+            ("status", worker::Method::Get)
+        };
+        let stub = env
+            .durable_object("DISPATCHER")?
+            .id_from_name("global")?
+            .get_stub()?;
+        let headers = worker::Headers::new();
+        headers.set("x-sigma-op", op)?;
+        let mut init = worker::RequestInit::new();
+        init.with_method(method).with_headers(headers);
+        let do_req = worker::Request::new_with_init("https://dispatcher.local/", &init)?;
+        let mut do_resp = stub.fetch_with_request(do_req).await?;
+        let body = do_resp.text().await.unwrap_or_default();
+        let mut resp = http::Response::builder()
+            .status(do_resp.status_code())
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(ConnectRpcBody::Full(Full::new(bytes::Bytes::from(body))))
+            .map_err(|e| worker::Error::RustError(format!("sigma: {e}")))?;
+        apply_cors(resp.headers_mut());
+        return Ok(resp);
+    }
+
     // Stripe webhook — verified by HMAC signature, NOT a Rauthy token, so it
     // sits OUTSIDE the guard. Verify, then durably hand the event to the
     // Dispatcher DO (which owns storage + fan-out + retry + dead-letter).

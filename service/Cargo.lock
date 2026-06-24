@@ -2579,6 +2579,7 @@ dependencies = [
  "pin-project-lite",
  "reqwest",
  "serde",
+ "serde_json",
  "tower",
  "worker",
 ]

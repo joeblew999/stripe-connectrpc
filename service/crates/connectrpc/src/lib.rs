@@ -29,6 +29,11 @@ pub use proto::stripe::v1::{
 pub mod client;
 pub use client::{StripeBackend, StripeError};
 
+// The Stripe -> SQLite mirror (ADR-14): runtime-agnostic resource tables behind
+// the SqlExec trait. The DO (CF) and native both feed it. Server-side only.
+#[cfg(feature = "_server")]
+pub mod mirror;
+
 // Server side (CF or native).
 #[cfg(feature = "_server")]
 pub use proto::stripe::v1::{BillingServiceExt, CatalogServiceExt, CheckoutServiceExt};
