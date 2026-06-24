@@ -19,6 +19,12 @@ pub use proto::stripe::v1::{
     Subscription, UpsertPriceRequest, UpsertPriceResponse, UpsertProductRequest,
     UpsertProductResponse,
 };
+// SigmaService — the read/analytics surface (ADR-14). Proto + typed client land
+// now; the server impl arrives with the resource-table mirror it reads from.
+pub use proto::stripe::v1::{
+    GetSyncStatusRequest, GetSyncStatusResponse, ListTablesRequest, ListTablesResponse, Row,
+    RunQueryRequest, RunQueryResponse, SigmaServiceClient, Table, TableStatus,
+};
 
 pub mod client;
 pub use client::{StripeBackend, StripeError};

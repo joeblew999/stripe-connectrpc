@@ -6,6 +6,7 @@ fn main() {
             "proto/stripe/v1/checkout.proto",
             "proto/stripe/v1/catalog.proto",
             "proto/stripe/v1/billing.proto",
+            "proto/stripe/v1/sigma.proto",
         ])
         .includes(&["proto"])
         .include_file("_connectrpc.rs")

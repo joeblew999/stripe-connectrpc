@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package stripe.v1;
+
+// SigmaService — the read/analytics surface over the mirrored Stripe account.
+//
+// Named after Stripe's product, Sigma (https://stripe.com/sigma), which this
+// replaces along with Stripe Data Pipeline (https://stripe.com/data-pipeline).
+// The webhook Dispatcher mirrors every verified Stripe event into local SQLite
+// (typed resource tables); SigmaService exposes that mirror.
+//
+// Like Stripe Sigma it speaks SQL (RunQuery). Unlike it, the surface is a typed
+// ConnectRPC contract behind the shared Rauthy->Cedar guard, with codegen'd
+// clients + a Kumo GUI, and it runs on BOTH Cloudflare (Durable Object / SQLite)
+// and native (plain SQLite) — no Cloudflare-only dependency. Read-only.
+service SigmaService {
+  // Ad-hoc read-only SQL over the mirror — the Stripe Sigma SQL-editor analog.
+  // The server rejects anything that isn't a single SELECT (no writes/DDL).
+  rpc RunQuery(RunQueryRequest) returns (RunQueryResponse);
+
+  // Discover the mirrored resource tables + their row counts (introspection).
+  rpc ListTables(ListTablesRequest) returns (ListTablesResponse);
+
+  // Per-table freshness + backfill progress — is the mirror caught up?
+  rpc GetSyncStatus(GetSyncStatusRequest) returns (GetSyncStatusResponse);
+}
+
+message RunQueryRequest {
+  string          sql    = 1; // a single read-only SELECT statement
+  repeated string params = 2; // positional `?` bind params (avoids injection)
+  uint32          limit  = 3; // hard row cap; 0 = server default
+}
+
+message RunQueryResponse {
+  repeated string columns   = 1; // column names, in result order
+  repeated Row    rows      = 2; // result rows, cells aligned to `columns`
+  bool            truncated = 3; // true if `limit` clipped the result
+}
+
+// One result row. SQLite is dynamically typed, so cells are stringified.
+message Row {
+  repeated string values = 1;
+}
+
+message ListTablesRequest {}
+
+message ListTablesResponse {
+  repeated Table tables = 1;
+}
+
+message Table {
+  string name      = 1; // resource table, e.g. "charges"
+  int64  row_count = 2; // mirrored rows
+}
+
+message GetSyncStatusRequest {}
+
+message GetSyncStatusResponse {
+  repeated TableStatus tables = 1;
+}
+
+message TableStatus {
+  string name          = 1; // resource table
+  int64  row_count     = 2; // mirrored rows
+  int64  last_event_at = 3; // unix ms of the most recent applied event (0 = none)
+  bool   backfilling   = 4; // a historical REST backfill is in progress
+}

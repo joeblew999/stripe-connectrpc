@@ -17,7 +17,11 @@ The Worker is named after the repo (`stripe-connectrpc`, **not** `smp`) so it's 
 
 ### Webhook DISPATCHER (Durable Object → portable store)
 
-Verified events are handed to the **Dispatcher**, which durably stores every event in SQLite (the event log = the read/analytics store), fans out to consumers, retries via alarms with backoff, and dead-letters on exhaustion. The store is designed **runtime-agnostic**: the Durable Object is the Cloudflare backend; native runs the same logic over plain SQLite (no CF Queues — pagination/retry uses DO alarms on CF and a tokio loop natively, so it ports cleanly). This is our own dual-runtime replacement for [opensigma](https://github.com/choyiny/opensigma)'s Stripe→D1 mirror.
+Verified events are handed to the **Dispatcher**, which durably stores every event in SQLite (the event log = the read/analytics store), fans out to consumers, retries via alarms with backoff, and dead-letters on exhaustion. The store is designed **runtime-agnostic**: the Durable Object is the Cloudflare backend; native runs the same logic over plain SQLite (no CF Queues — pagination/retry uses DO alarms on CF and a tokio loop natively, so it ports cleanly).
+
+### Read/analytics: `SigmaService` — our own Stripe Sigma
+
+The mirror is exposed as a typed ConnectRPC **`SigmaService`** ([proto](service/crates/connectrpc/proto/stripe/v1/sigma.proto)) — named after, and replacing, [Stripe Sigma](https://stripe.com/sigma) ([pricing](https://stripe.com/sigma/pricing)) and [Stripe Data Pipeline](https://stripe.com/data-pipeline) ([pricing](https://stripe.com/data-pipeline/pricing)). Like Sigma it speaks SQL (`RunQuery`); unlike it, the surface is a typed contract behind the shared Rauthy→Cedar guard, with codegen'd clients + Kumo GUI, and it runs on **CF and native**. This is our dual-runtime, ConnectRPC-native take on [opensigma](https://github.com/choyiny/opensigma)'s Stripe→D1 mirror — opensigma is reference (it has no API; you query its D1 directly), we ship a typed service.
 
 ## Building blocks
 
