@@ -3,7 +3,7 @@
 idiomatic_version_file_enable_tools = ["rust"]
 
 [tools]
-"aqua:jdx/pitchfork" = "latest"
+"aqua:jdx/pitchfork" = "2.28.0"
 "aqua:nushell/nushell" = "0.112.2"
 "aqua:stripe/stripe-cli" = "1.42.1"
 
@@ -25,7 +25,7 @@ idiomatic_version_file_enable_tools = ["rust"]
 # buf does proto lint + TypeScript client codegen for consuming projects.
 # Same pins as google_maps feat/cloudflare-workers.
 "aqua:protocolbuffers/protobuf/protoc" = "35.0"
-"aqua:bufbuild/buf" = "latest"
+"aqua:bufbuild/buf" = "1.73.0"
 
 # --- opensigma read/analytics side (sigma:* tasks only) ---
 # opensigma (OSS Stripe Sigma / Data Pipeline replacement) is vendored into
@@ -34,7 +34,7 @@ idiomatic_version_file_enable_tools = ["rust"]
 # node 22 because opensigma's wrangler needs >=22 (its .nvmrc wrongly says 20).
 # Safe to remove if you'll never run sigma:*.
 node = "22.23.2"
-"npm:pnpm" = "latest"
+"npm:pnpm" = "12.8.1"
 
 [env]
 XS_STORE      = "{{ config_root }}/.xs-store"
