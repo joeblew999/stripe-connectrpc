@@ -24,7 +24,7 @@ idiomatic_version_file_enable_tools = ["rust"]
 # protoc compiles proto/stripe/v1/*.proto via connectrpc-build (Rust server+client);
 # buf does proto lint + TypeScript client codegen for consuming projects.
 # Same pins as google_maps feat/cloudflare-workers.
-"aqua:protocolbuffers/protobuf/protoc" = "latest"
+"aqua:protocolbuffers/protobuf/protoc" = "35.0"
 "aqua:bufbuild/buf" = "latest"
 
 # --- opensigma read/analytics side (sigma:* tasks only) ---
