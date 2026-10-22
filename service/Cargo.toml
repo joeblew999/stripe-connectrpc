@@ -11,4 +11,7 @@ members = ["crates/connectrpc", "worker", "native"]
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = true
+# NOT `true`: a full strip drops the wasm `target_features` section, and
+# worker-build >= 0.8.7 (always `--force-enable-abort-handler`) then fails in
+# wasm-bindgen with "externref table required for catch wrappers".
+strip = "debuginfo"

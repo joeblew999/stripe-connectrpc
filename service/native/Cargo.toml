@@ -8,7 +8,9 @@ publish = false
 [dependencies]
 stripe-connectrpc = { path = "../crates/connectrpc", features = ["native"] }
 
-connectrpc = { version = "0.7", default-features = false }
+# `json` = the Connect JSON codec (opt-in since connectrpc 0.8). This host SERVES
+# the service, so without it every `application/json` request is HTTP 415.
+connectrpc = { version = "0.9.1", default-features = false, features = ["json"] }
 hyper      = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["server", "tokio", "service"] }
 ureq       = { version = "2", features = ["json"] }
@@ -18,3 +20,9 @@ rusqlite   = { version = "0.31", features = ["bundled"] }
 serde_json = "1"
 tokio      = { version = "1", features = ["rt", "net", "macros"] }
 tower      = { version = "0.5", default-features = false, features = ["util"] }
+
+[dev-dependencies]
+# connect_json_request_is_served drives the served stack with a JSON request.
+bytes          = "1"
+http           = "1"
+http-body-util = "0.1"
