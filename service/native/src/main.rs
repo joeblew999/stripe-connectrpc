@@ -81,3 +81,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use bytes::Bytes;
+    use connectrpc::{ConnectRpcService, Router as RpcRouter};
+    use http_body_util::{BodyExt as _, Full};
+    use stripe_connectrpc::{SigmaServer, SigmaServiceExt};
+    use tower::ServiceExt as _;
+
+    use crate::sigma::SqliteStore;
+
+    /// A Connect JSON request through the served RPC stack (router →
+    /// `ConnectRpcService`, as `main` builds it) is decoded and answered. Guards
+    /// the connectrpc >= 0.8 trap: the JSON codec is behind the `json` feature,
+    /// which `default-features = false` drops, and without it every
+    /// `application/json` call is HTTP 415. The Rauthy guard is left off (it
+    /// needs a signed token and never touches the codec).
+    #[tokio::test]
+    async fn connect_json_request_is_served() {
+        let store = SqliteStore::open(":memory:").unwrap();
+        let router = Arc::new(SigmaServer::new(store)).register(RpcRouter::new());
+        let svc = ConnectRpcService::new(router);
+        let req = http::Request::post("/stripe.v1.SigmaService/RunQuery")
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .body(Full::new(Bytes::from_static(
+                br#"{"sql":"SELECT 42 AS answer"}"#,
+            )))
+            .unwrap();
+
+        let resp = svc.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8_lossy(&body);
+        assert_eq!(status, http::StatusCode::OK, "body: {body}");
+        assert!(
+            body.contains("answer") && body.contains("42"),
+            "body: {body}"
+        );
+    }
+}

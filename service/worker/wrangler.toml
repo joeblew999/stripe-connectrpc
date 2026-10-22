@@ -6,10 +6,10 @@ compatibility_date = "2026-05-01"
 [dev]
 port = 8787
 
-# worker-build pinned to =0.8.4: 0.8.5 emits `--force-enable-abort-handler`,
-# which the wasm-bindgen 0.2.122 that `worker = "0.8"` locks does not accept.
+# worker-build pinned to =0.8.7, alongside worker 0.8.7. It always passes
+# `--force-enable-abort-handler`, so the lock needs wasm-bindgen >= 0.2.125.
 [build]
-command = "cargo install -q worker-build --version '=0.8.4' && worker-build --release"
+command = "cargo install -q worker-build --version '=0.8.7' && worker-build --release"
 
 # The webhook DISPATCHER is a Durable Object: it durably stores every verified
 # Stripe event (SQLite = the event log = the read/analytics store), fans out to

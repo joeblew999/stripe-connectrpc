@@ -36,6 +36,8 @@ pub fn guard<S, B>(
 ) -> impl Service<http::Request<B>, Response = Response<ConnectRpcBody>, Error = Infallible> + Clone
 where
     S: Service<http::Request<B>, Response = Response<ConnectRpcBody>, Error = Infallible> + Clone,
+    // Forwarded: the middleware's `guard` requires a `Send` inner future.
+    S::Future: Send,
     B: 'static,
 {
     connectrpc_guard::guard(verifier, authorizer(), "stripe", &["/health"], inner)
